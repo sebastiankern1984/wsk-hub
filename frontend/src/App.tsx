@@ -21,9 +21,9 @@ export default function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/products" element={<Products />} />
             <Route path="/products/:id" element={<ProductDetail />} />
-            <Route path="/suppliers" element={<Suppliers />} />
             <Route path="/events" element={<Events />} />
             <Route path="/connectors/abda" element={<AbdaConnector />} />
+            <Route path="/connectors/suppliers" element={<Suppliers />} />
             <Route path="/settings" element={<Settings />} />
           </Route>
         </Route>

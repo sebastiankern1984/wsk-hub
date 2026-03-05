@@ -31,7 +31,6 @@ function isDropdown(entry: NavEntry): entry is NavDropdown {
 const navEntries: NavEntry[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/products", label: "Produkte", icon: Package },
-  { to: "/suppliers", label: "Lieferanten", icon: Truck },
   { to: "/events", label: "Events", icon: Activity },
   {
     label: "Connectoren",
@@ -39,6 +38,7 @@ const navEntries: NavEntry[] = [
     prefix: "/connectors",
     children: [
       { to: "/connectors/abda", label: "ABDA", icon: FileSpreadsheet },
+      { to: "/connectors/suppliers", label: "Lieferanten", icon: Truck },
     ],
   },
 ];
