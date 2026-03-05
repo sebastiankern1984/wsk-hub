@@ -237,6 +237,7 @@ function SucheTab() {
   const [results, setResults] = useState<AbdaLookupResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [adding, setAdding] = useState<string | null>(null);
+  const [excludeMedication, setExcludeMedication] = useState(true);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const doSearch = async () => {
@@ -244,7 +245,7 @@ function SucheTab() {
     setLoading(true);
     setMessage(null);
     try {
-      const data = await api.lookupAbda(search);
+      const data = await api.lookupAbda(search, excludeMedication);
       setResults(data);
     } catch (e) {
       setMessage({ type: "error", text: e instanceof Error ? e.message : "Suche fehlgeschlagen" });
@@ -272,25 +273,36 @@ function SucheTab() {
   return (
     <div className="space-y-6">
       {/* Search */}
-      <div className="flex gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && doSearch()}
-            placeholder="PZN oder Produktname eingeben..."
-            className="w-full rounded-lg border border-border bg-card py-2.5 pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
-          />
-        </div>
-        <button
+      <div className="flex flex-col gap-3">
+        <div className="flex gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && doSearch()}
+              placeholder="PZN oder Produktname eingeben..."
+              className="w-full rounded-lg border border-border bg-card py-2.5 pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+            />
+          </div>
+          <button
           onClick={doSearch}
           disabled={loading || search.length < 1}
           className="rounded-lg bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Suchen"}
-        </button>
+          </button>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={excludeMedication}
+            onChange={(e) => setExcludeMedication(e.target.checked)}
+            className="rounded border-border"
+          />
+          Arzneimittel ausschließen
+        </label>
       </div>
 
       {/* Messages */}

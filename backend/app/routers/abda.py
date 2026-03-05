@@ -21,6 +21,7 @@ router = APIRouter(prefix="/abda", tags=["abda"])
 async def lookup_abda(
     search: str = Query(..., min_length=1),
     limit: int = Query(50, le=200),
+    exclude_medication: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
@@ -31,9 +32,13 @@ async def lookup_abda(
     else:
         condition = AbdaPacApo.langname.ilike(f"%{search}%")
 
-    result = await db.execute(
-        select(AbdaPacApo).where(condition).limit(limit)
-    )
+    query = select(AbdaPacApo).where(condition)
+    if exclude_medication:
+        query = query.where(
+            or_(AbdaPacApo.arzneimittel.is_(None), AbdaPacApo.arzneimittel != "J")
+        )
+
+    result = await db.execute(query.limit(limit))
     articles = result.scalars().all()
 
     # Check which PZNs are already in hub

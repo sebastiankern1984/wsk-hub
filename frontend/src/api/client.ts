@@ -271,8 +271,8 @@ export const api = {
   },
   getAbdaImports: () => fetchAPI<AbdaImportLog[]>("/api/imports/abda"),
   getAbdaImportProgress: (id: number) => fetchAPI<AbdaImportLog>(`/api/imports/abda/${id}`),
-  lookupAbda: (search: string) =>
-    fetchAPI<AbdaLookupResult[]>(`/api/abda/lookup?search=${encodeURIComponent(search)}`),
+  lookupAbda: (search: string, excludeMedication = false) =>
+    fetchAPI<AbdaLookupResult[]>(`/api/abda/lookup?search=${encodeURIComponent(search)}${excludeMedication ? "&exclude_medication=true" : ""}`),
   addAbdaToHub: (pzn: string) =>
     fetchAPI<{ id: number; product_id: string; pzn: string; name: string }>(`/api/abda/add-to-hub/${pzn}`, { method: "POST" }),
   getAbdaStats: () => fetchAPI<AbdaStats>("/api/abda/stats"),
