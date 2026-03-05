@@ -273,6 +273,23 @@ export interface AbdaStats {
   total_imports: number;
 }
 
+// Supplier Import types
+export interface SupplierImportLog {
+  id: number;
+  filename: string;
+  supplier_id: number | null;
+  supplier_name: string | null;
+  status: string;
+  total_rows: number;
+  processed_rows: number;
+  imported_rows: number;
+  skipped_rows: number;
+  error_message: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+}
+
 export interface AlphaplanStatus {
   status: string;
   message: string;
@@ -372,6 +389,15 @@ export const api = {
   addAbdaToHub: (pzn: string) =>
     fetchAPI<{ id: number; product_id: string; pzn: string; name: string }>(`/api/abda/add-to-hub/${pzn}`, { method: "POST" }),
   getAbdaStats: () => fetchAPI<AbdaStats>("/api/abda/stats"),
+
+  // Supplier Import
+  uploadSupplierCsv: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return fetchAPIFormData<SupplierImportLog>("/api/imports/supplier", fd);
+  },
+  getSupplierImports: () => fetchAPI<SupplierImportLog[]>("/api/imports/supplier"),
+  getSupplierImportProgress: (id: number) => fetchAPI<SupplierImportLog>(`/api/imports/supplier/${id}`),
 
   // Alphaplan
   getAlphaplanStatus: () => fetchAPI<AlphaplanStatus>("/api/alphaplan/status"),
