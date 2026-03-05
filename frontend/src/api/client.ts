@@ -27,6 +27,34 @@ async function fetchAPI<T>(path: string, options: RequestInit = {}): Promise<T> 
   return res.json();
 }
 
+async function fetchAPIFormData<T>(path: string, formData: FormData): Promise<T> {
+  const token = localStorage.getItem("token");
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+
+  if (res.status === 401) {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    window.location.href = "/login";
+    throw new Error("Unauthorized");
+  }
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Request failed" }));
+    throw new Error(error.detail || `HTTP ${res.status}`);
+  }
+
+  return res.json();
+}
+
 // Types
 export interface Product {
   id: number;
@@ -124,6 +152,64 @@ export interface LoginResponse {
   user: UserInfo;
 }
 
+// ABDA types
+export interface AbdaImportLog {
+  id: number;
+  file_name: string;
+  file_type: string;
+  file_date: string | null;
+  record_count_total: number;
+  record_count_insert: number;
+  record_count_update: number;
+  status: string;
+  error_message: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+}
+
+export interface AbdaLookupResult {
+  pzn: string;
+  ean: string | null;
+  name: string | null;
+  manufacturer: string | null;
+  pack_size: string | null;
+  norm_size: string | null;
+  apo_ek: string | null;
+  is_medication: string | null;
+  pharmacy_required: string | null;
+  market_status: string | null;
+  distribution_status: string | null;
+  already_in_hub: boolean;
+}
+
+export interface AbdaStats {
+  total_articles: number;
+  last_import_date: string | null;
+  last_import_status: string | null;
+  total_imports: number;
+}
+
+export interface AlphaplanStatus {
+  status: string;
+  message: string;
+}
+
+export interface AppSetting {
+  key: string;
+  value: string | null;
+  description: string | null;
+  is_secret: boolean;
+  updated_at: string;
+}
+
+export interface Manufacturer {
+  id: number;
+  name: string;
+  country: string | null;
+  created_at: string;
+}
+
 // API functions
 export const api = {
   // Auth
@@ -176,4 +262,32 @@ export const api = {
 
   getAggregateEvents: (aggregateType: string, aggregateId: string) =>
     fetchAPI<EventListResponse>(`/api/events/${aggregateType}/${aggregateId}`),
+
+  // ABDA
+  uploadAbdaExcel: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return fetchAPIFormData<AbdaImportLog>("/api/imports/abda", fd);
+  },
+  getAbdaImports: () => fetchAPI<AbdaImportLog[]>("/api/imports/abda"),
+  getAbdaImportProgress: (id: number) => fetchAPI<AbdaImportLog>(`/api/imports/abda/${id}`),
+  lookupAbda: (search: string) =>
+    fetchAPI<AbdaLookupResult[]>(`/api/abda/lookup?search=${encodeURIComponent(search)}`),
+  addAbdaToHub: (pzn: string) =>
+    fetchAPI<{ id: number; product_id: string; pzn: string; name: string }>(`/api/abda/add-to-hub/${pzn}`, { method: "POST" }),
+  getAbdaStats: () => fetchAPI<AbdaStats>("/api/abda/stats"),
+
+  // Alphaplan
+  getAlphaplanStatus: () => fetchAPI<AlphaplanStatus>("/api/alphaplan/status"),
+
+  // Settings
+  getSettings: () => fetchAPI<AppSetting[]>("/api/settings"),
+  updateSetting: (key: string, value: string | null) =>
+    fetchAPI<AppSetting>(`/api/settings/${key}`, {
+      method: "PUT",
+      body: JSON.stringify({ value }),
+    }),
+
+  // Manufacturers
+  getManufacturers: () => fetchAPI<Manufacturer[]>("/api/manufacturers"),
 };

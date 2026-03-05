@@ -1,16 +1,20 @@
 import { useState, useEffect } from "react";
-import { api, type ProductStats, type Supplier, type EventItem } from "@/api/client";
-import { Package, Truck, CheckCircle, Activity } from "lucide-react";
+import { api, type ProductStats, type Supplier, type EventItem, type AbdaStats, type AlphaplanStatus } from "@/api/client";
+import { Package, Truck, CheckCircle, Activity, FileSpreadsheet, Wifi, WifiOff } from "lucide-react";
 
 export default function Dashboard() {
   const [stats, setStats] = useState<ProductStats | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [events, setEvents] = useState<EventItem[]>([]);
+  const [abdaStats, setAbdaStats] = useState<AbdaStats | null>(null);
+  const [apStatus, setApStatus] = useState<AlphaplanStatus | null>(null);
 
   useEffect(() => {
     api.getProductStats().then(setStats).catch(console.error);
     api.getSuppliers().then(setSuppliers).catch(console.error);
     api.getEvents(new URLSearchParams({ limit: "10" })).then((r) => setEvents(r.items)).catch(console.error);
+    api.getAbdaStats().then(setAbdaStats).catch(console.error);
+    api.getAlphaplanStatus().then(setApStatus).catch(console.error);
   }, []);
 
   const cards = [
@@ -34,13 +38,18 @@ export default function Dashboard() {
       value: suppliers.length,
       icon: Truck,
     },
+    {
+      title: "ABDA Artikel",
+      value: abdaStats?.total_articles?.toLocaleString("de-DE") ?? "–",
+      icon: FileSpreadsheet,
+    },
   ];
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {cards.map((card) => (
           <div
             key={card.title}
@@ -55,6 +64,31 @@ export default function Dashboard() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Alphaplan Status */}
+      <div className="rounded-xl border border-border bg-card px-6 py-4">
+        <div className="flex items-center gap-3">
+          {apStatus?.status === "ok" ? (
+            <Wifi className="h-5 w-5 text-green-500" />
+          ) : (
+            <WifiOff className="h-5 w-5 text-muted-foreground" />
+          )}
+          <div>
+            <span className="text-sm font-medium text-foreground">Alphaplan REST</span>
+            <span
+              className={`ml-2 rounded-full px-2 py-0.5 text-xs font-medium ${
+                apStatus?.status === "ok"
+                  ? "bg-green-500/10 text-green-500"
+                  : apStatus?.status === "disabled"
+                    ? "bg-yellow-500/10 text-yellow-500"
+                    : "bg-red-500/10 text-red-500"
+              }`}
+            >
+              {apStatus?.status === "ok" ? "Verbunden" : apStatus?.status === "disabled" ? "Deaktiviert" : "Nicht verbunden"}
+            </span>
+          </div>
+        </div>
       </div>
 
       <div className="rounded-xl border border-border bg-card">

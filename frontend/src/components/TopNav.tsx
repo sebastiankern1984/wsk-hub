@@ -8,6 +8,9 @@ import {
   Activity,
   LogOut,
   Database,
+  FileSpreadsheet,
+  Search,
+  Settings2,
 } from "lucide-react";
 
 const navItems = [
@@ -15,6 +18,12 @@ const navItems = [
   { to: "/products", label: "Produkte", icon: Package },
   { to: "/suppliers", label: "Lieferanten", icon: Truck },
   { to: "/events", label: "Events", icon: Activity },
+  { to: "/abda/import", label: "ABDA Import", icon: FileSpreadsheet },
+  { to: "/abda/lookup", label: "ABDA Suche", icon: Search },
+];
+
+const adminNavItems = [
+  { to: "/settings", label: "Einstellungen", icon: Settings2 },
 ];
 
 export function TopNav() {
@@ -54,6 +63,25 @@ export function TopNav() {
                 </Link>
               );
             })}
+            {user?.role === "admin" &&
+              adminNavItems.map((item) => {
+                const isActive = location.pathname.startsWith(item.to);
+                return (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    className={cn(
+                      "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                      isActive
+                        ? "bg-primary/10 text-primary"
+                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                    )}
+                  >
+                    <item.icon className="h-4 w-4" />
+                    {item.label}
+                  </Link>
+                );
+              })}
           </nav>
 
           <div className="ml-auto flex items-center gap-4">
