@@ -9,9 +9,12 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_import_pool
-from app.models.abda import AbdaImportLog, AbdaPriceHistory
+from app.models.abda import AbdaImportLog, AbdaPacApo, AbdaPriceHistory
 
 logger = logging.getLogger(__name__)
+
+# Build set of valid DB column names from the model
+_VALID_COLUMNS = {c.name for c in AbdaPacApo.__table__.columns} - {"_updated_at"}
 
 # Column mapping: Excel header → DB column
 CURATED_COLUMN_MAP = {
@@ -62,8 +65,8 @@ async def import_abda_excel(db: AsyncSession, import_log_id: int, file_path: str
         for idx, header in enumerate(headers):
             if header in CURATED_COLUMN_MAP:
                 col_map[idx] = CURATED_COLUMN_MAP[header]
-            elif header.lower() and header.lower() != "pzn":
-                # Raw fields: use lowercase header as DB column
+            elif header.lower() in _VALID_COLUMNS and header.lower() != "pzn":
+                # Raw fields: use lowercase header as DB column (only if column exists)
                 col_map[idx] = header.lower()
 
         # PZN column index
