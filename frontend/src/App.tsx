@@ -8,8 +8,7 @@ import Products from "./pages/Products";
 import ProductDetail from "./pages/ProductDetail";
 import Suppliers from "./pages/Suppliers";
 import Events from "./pages/Events";
-import ImportAbda from "./pages/ImportAbda";
-import AbdaLookup from "./pages/AbdaLookup";
+import AbdaConnector from "./pages/AbdaConnector";
 import Settings from "./pages/Settings";
 
 export default function App() {
@@ -24,8 +23,7 @@ export default function App() {
             <Route path="/products/:id" element={<ProductDetail />} />
             <Route path="/suppliers" element={<Suppliers />} />
             <Route path="/events" element={<Events />} />
-            <Route path="/abda/import" element={<ImportAbda />} />
-            <Route path="/abda/lookup" element={<AbdaLookup />} />
+            <Route path="/connectors/abda" element={<AbdaConnector />} />
             <Route path="/settings" element={<Settings />} />
           </Route>
         </Route>

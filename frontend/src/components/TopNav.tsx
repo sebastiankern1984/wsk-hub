@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
@@ -9,26 +10,142 @@ import {
   LogOut,
   Database,
   FileSpreadsheet,
-  Search,
   Settings2,
+  ChevronDown,
+  Cable,
 } from "lucide-react";
 
-const navItems = [
+type NavLink = { to: string; label: string; icon: React.ElementType };
+type NavDropdown = {
+  label: string;
+  icon: React.ElementType;
+  prefix: string;
+  children: NavLink[];
+};
+type NavEntry = NavLink | NavDropdown;
+
+function isDropdown(entry: NavEntry): entry is NavDropdown {
+  return "children" in entry;
+}
+
+const navEntries: NavEntry[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/products", label: "Produkte", icon: Package },
   { to: "/suppliers", label: "Lieferanten", icon: Truck },
   { to: "/events", label: "Events", icon: Activity },
-  { to: "/abda/import", label: "ABDA Import", icon: FileSpreadsheet },
-  { to: "/abda/lookup", label: "ABDA Suche", icon: Search },
+  {
+    label: "Connectoren",
+    icon: Cable,
+    prefix: "/connectors",
+    children: [
+      { to: "/connectors/abda", label: "ABDA", icon: FileSpreadsheet },
+    ],
+  },
 ];
 
-const adminNavItems = [
+const adminEntries: NavEntry[] = [
   { to: "/settings", label: "Einstellungen", icon: Settings2 },
 ];
 
+/* ── Dropdown component ── */
+function NavDropdownMenu({
+  entry,
+  isActive,
+}: {
+  entry: NavDropdown;
+  isActive: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const timeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const enter = () => {
+    if (timeout.current) clearTimeout(timeout.current);
+    setOpen(true);
+  };
+  const leave = () => {
+    timeout.current = setTimeout(() => setOpen(false), 150);
+  };
+
+  useEffect(() => () => { if (timeout.current) clearTimeout(timeout.current); }, []);
+
+  return (
+    <div
+      ref={ref}
+      className="relative"
+      onMouseEnter={enter}
+      onMouseLeave={leave}
+    >
+      <button
+        className={cn(
+          "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+          isActive
+            ? "bg-primary/10 text-primary"
+            : "text-muted-foreground hover:bg-accent hover:text-foreground"
+        )}
+      >
+        <entry.icon className="h-4 w-4" />
+        {entry.label}
+        <ChevronDown
+          className={cn(
+            "h-3 w-3 transition-transform",
+            open && "rotate-180"
+          )}
+        />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 min-w-[180px] rounded-lg border border-border bg-card py-1 shadow-lg">
+          {entry.children.map((child) => (
+            <Link
+              key={child.to}
+              to={child.to}
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-2 px-4 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <child.icon className="h-4 w-4" />
+              {child.label}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── NavItem renderer ── */
+function NavItem({ entry }: { entry: NavEntry }) {
+  const location = useLocation();
+
+  if (isDropdown(entry)) {
+    const isActive = location.pathname.startsWith(entry.prefix);
+    return <NavDropdownMenu entry={entry} isActive={isActive} />;
+  }
+
+  const isActive =
+    entry.to === "/"
+      ? location.pathname === "/"
+      : location.pathname.startsWith(entry.to);
+
+  return (
+    <Link
+      to={entry.to}
+      className={cn(
+        "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+        isActive
+          ? "bg-primary/10 text-primary"
+          : "text-muted-foreground hover:bg-accent hover:text-foreground"
+      )}
+    >
+      <entry.icon className="h-4 w-4" />
+      {entry.label}
+    </Link>
+  );
+}
+
+/* ── TopNav ── */
 export function TopNav() {
   const { user, logout } = useAuth();
-  const location = useLocation();
 
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-card">
@@ -42,46 +159,19 @@ export function TopNav() {
           </Link>
 
           <nav className="flex items-center gap-1">
-            {navItems.map((item) => {
-              const isActive =
-                item.to === "/"
-                  ? location.pathname === "/"
-                  : location.pathname.startsWith(item.to);
-              return (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  className={cn(
-                    "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                    isActive
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                  )}
-                >
-                  <item.icon className="h-4 w-4" />
-                  {item.label}
-                </Link>
-              );
-            })}
+            {navEntries.map((entry) => (
+              <NavItem
+                key={isDropdown(entry) ? entry.prefix : entry.to}
+                entry={entry}
+              />
+            ))}
             {user?.role === "admin" &&
-              adminNavItems.map((item) => {
-                const isActive = location.pathname.startsWith(item.to);
-                return (
-                  <Link
-                    key={item.to}
-                    to={item.to}
-                    className={cn(
-                      "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                      isActive
-                        ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                    )}
-                  >
-                    <item.icon className="h-4 w-4" />
-                    {item.label}
-                  </Link>
-                );
-              })}
+              adminEntries.map((entry) => (
+                <NavItem
+                  key={isDropdown(entry) ? entry.prefix : entry.to}
+                  entry={entry}
+                />
+              ))}
           </nav>
 
           <div className="ml-auto flex items-center gap-4">
