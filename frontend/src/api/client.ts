@@ -59,26 +59,61 @@ async function fetchAPIFormData<T>(path: string, formData: FormData): Promise<T>
 export interface Product {
   id: number;
   product_id: string;
+  // Identity
   erp_sku: string | null;
+  internal_sku: string | null;
   ean: string | null;
   pzn: string | null;
   nan: string | null;
+  // Names
   name: string;
+  name_short: string | null;
+  name_long: string | null;
   description: string | null;
+  // Manufacturer
   manufacturer: string | null;
+  manufacturer_id: number | null;
+  // Classification
   category: string | null;
   subcategory: string | null;
+  warengruppe: string | null;
+  saisonartikel: boolean | null;
+  bio_article: boolean | null;
+  // Size / Packaging
   unit_size: string | null;
   norm_size: string | null;
+  size_value: number | null;
+  size_unit: string | null;
+  units_per_ve: number | null;
+  ve_per_layer: number | null;
+  layers_per_palette: number | null;
+  ve_per_palette: number | null;
+  // Tax
   vat_rate: number | null;
+  // Weight
   weight_g: number | null;
+  weight_piece_g: number | null;
+  weight_ve_g: number | null;
+  weight_palette_g: number | null;
+  // Dimensions
+  width_mm: number | null;
+  height_mm: number | null;
+  length_mm: number | null;
+  // Compliance
   is_medication: boolean | null;
   pharmacy_required: string | null;
   market_status: string | null;
+  country_of_origin: string | null;
+  pharma_flag: boolean | null;
+  biozid_flag: boolean | null;
+  dg_flag: boolean | null;
+  shelf_life_days: number | null;
   hs_code: string | null;
   abda_pzn: string | null;
+  // Release
   release_to_erp: boolean;
   release_to_channel: boolean;
+  // Meta
   version: number;
   status: string;
   supplier_count: number;
@@ -86,8 +121,37 @@ export interface Product {
   updated_at: string;
 }
 
+export interface ProductEanInfo {
+  id: number;
+  ean_type: string;
+  ean_value: string;
+  is_primary: boolean;
+  source: string | null;
+  valid_from: string | null;
+  valid_to: string | null;
+}
+
+export interface ProductPriceInfo {
+  id: number;
+  source: string;
+  price_type: string;
+  price: number;
+  currency: string;
+  valid_from: string | null;
+  valid_to: string | null;
+}
+
+export interface ProductHsCodeInfo {
+  id: number;
+  country: string;
+  hs_code: string;
+}
+
 export interface ProductDetail extends Product {
   suppliers: SupplierProductInfo[];
+  eans: ProductEanInfo[];
+  prices: ProductPriceInfo[];
+  hs_codes: ProductHsCodeInfo[];
 }
 
 export interface SupplierProductInfo {
@@ -183,6 +247,25 @@ export interface AbdaLookupResult {
   already_in_hub: boolean;
 }
 
+export interface AbdaLookupResponse {
+  items: AbdaLookupResult[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface AbdaFilterParams {
+  filter_pzn?: string;
+  filter_ean?: string;
+  filter_name?: string;
+  filter_manufacturer?: string;
+  filter_apo_ek?: string;
+  filter_norm_size?: string;
+  exclude_medication?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
 export interface AbdaStats {
   total_articles: number;
   last_import_date: string | null;
@@ -272,7 +355,20 @@ export const api = {
   getAbdaImports: () => fetchAPI<AbdaImportLog[]>("/api/imports/abda"),
   getAbdaImportProgress: (id: number) => fetchAPI<AbdaImportLog>(`/api/imports/abda/${id}`),
   lookupAbda: (search: string, excludeMedication = false) =>
-    fetchAPI<AbdaLookupResult[]>(`/api/abda/lookup?search=${encodeURIComponent(search)}${excludeMedication ? "&exclude_medication=true" : ""}`),
+    fetchAPI<AbdaLookupResponse>(`/api/abda/lookup?search=${encodeURIComponent(search)}${excludeMedication ? "&exclude_medication=true" : ""}`),
+  lookupAbdaFiltered: (params: AbdaFilterParams) => {
+    const sp = new URLSearchParams();
+    if (params.filter_pzn) sp.set("filter_pzn", params.filter_pzn);
+    if (params.filter_ean) sp.set("filter_ean", params.filter_ean);
+    if (params.filter_name) sp.set("filter_name", params.filter_name);
+    if (params.filter_manufacturer) sp.set("filter_manufacturer", params.filter_manufacturer);
+    if (params.filter_apo_ek) sp.set("filter_apo_ek", params.filter_apo_ek);
+    if (params.filter_norm_size) sp.set("filter_norm_size", params.filter_norm_size);
+    if (params.exclude_medication) sp.set("exclude_medication", "true");
+    sp.set("limit", String(params.limit ?? 50));
+    sp.set("offset", String(params.offset ?? 0));
+    return fetchAPI<AbdaLookupResponse>(`/api/abda/lookup?${sp}`);
+  },
   addAbdaToHub: (pzn: string) =>
     fetchAPI<{ id: number; product_id: string; pzn: string; name: string }>(`/api/abda/add-to-hub/${pzn}`, { method: "POST" }),
   getAbdaStats: () => fetchAPI<AbdaStats>("/api/abda/stats"),

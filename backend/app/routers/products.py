@@ -16,7 +16,10 @@ from app.models.user import User
 from app.schemas.product import (
     ProductCreate,
     ProductDetailResponse,
+    ProductEanInfo,
+    ProductHsCodeInfo,
     ProductListResponse,
+    ProductPriceInfo,
     ProductResponse,
     ProductUpdate,
     SupplierProductInfo,
@@ -30,29 +33,61 @@ def _product_to_response(product: Product) -> ProductResponse:
     return ProductResponse(
         id=product.id,
         product_id=str(product.product_id),
+        # Identity
         erp_sku=product.erp_sku,
+        internal_sku=product.internal_sku,
         ean=product.ean,
         pzn=product.pzn,
         nan=product.nan,
+        # Names
         name=product.name,
+        name_short=product.name_short,
+        name_long=product.name_long,
         description=product.description,
+        # Manufacturer
         manufacturer=product.manufacturer,
+        manufacturer_id=product.manufacturer_id,
+        # Classification
         category=product.category,
         subcategory=product.subcategory,
+        warengruppe=product.warengruppe,
+        saisonartikel=product.saisonartikel,
+        bio_article=product.bio_article,
+        # Size / Packaging
         unit_size=product.unit_size,
         norm_size=product.norm_size,
+        size_value=float(product.size_value) if product.size_value is not None else None,
+        size_unit=product.size_unit,
+        units_per_ve=product.units_per_ve,
+        ve_per_layer=product.ve_per_layer,
+        layers_per_palette=product.layers_per_palette,
+        ve_per_palette=product.ve_per_palette,
+        # Tax
         vat_rate=float(product.vat_rate) if product.vat_rate is not None else None,
+        # Weight
         weight_g=product.weight_g,
+        weight_piece_g=product.weight_piece_g,
+        weight_ve_g=product.weight_ve_g,
+        weight_palette_g=product.weight_palette_g,
+        # Dimensions
         width_mm=product.width_mm,
         height_mm=product.height_mm,
         length_mm=product.length_mm,
+        # Compliance
         is_medication=product.is_medication,
         pharmacy_required=product.pharmacy_required,
         market_status=product.market_status,
+        country_of_origin=product.country_of_origin,
+        pharma_flag=product.pharma_flag,
+        biozid_flag=product.biozid_flag,
+        dg_flag=product.dg_flag,
+        shelf_life_days=product.shelf_life_days,
         hs_code=product.hs_code,
         abda_pzn=product.abda_pzn,
+        # Release
         release_to_erp=product.release_to_erp,
         release_to_channel=product.release_to_channel,
+        # Meta
         version=product.version,
         status=product.status,
         supplier_count=len(product.supplier_products) if product.supplier_products else 0,
@@ -153,30 +188,68 @@ async def get_product(
 ):
     result = await db.execute(
         select(Product)
-        .options(selectinload(Product.supplier_products).selectinload(SupplierProduct.supplier))
+        .options(
+            selectinload(Product.supplier_products).selectinload(SupplierProduct.supplier),
+            selectinload(Product.eans),
+            selectinload(Product.prices),
+            selectinload(Product.hs_codes),
+        )
         .where(Product.id == product_id)
     )
     product = result.unique().scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    suppliers = []
-    for sp in product.supplier_products:
-        suppliers.append(
-            SupplierProductInfo(
-                id=sp.id,
-                supplier_id=sp.supplier_id,
-                supplier_name=sp.supplier.name if sp.supplier else None,
-                supplier_sku=sp.supplier_sku,
-                purchase_price=float(sp.purchase_price) if sp.purchase_price is not None else None,
-                retail_price=float(sp.retail_price) if sp.retail_price is not None else None,
-            )
+    suppliers = [
+        SupplierProductInfo(
+            id=sp.id,
+            supplier_id=sp.supplier_id,
+            supplier_name=sp.supplier.name if sp.supplier else None,
+            supplier_sku=sp.supplier_sku,
+            purchase_price=float(sp.purchase_price) if sp.purchase_price is not None else None,
+            retail_price=float(sp.retail_price) if sp.retail_price is not None else None,
         )
+        for sp in product.supplier_products
+    ]
+
+    eans = [
+        ProductEanInfo(
+            id=e.id,
+            ean_type=e.ean_type,
+            ean_value=e.ean_value,
+            is_primary=e.is_primary,
+            source=e.source,
+            valid_from=e.valid_from.isoformat() if e.valid_from else None,
+            valid_to=e.valid_to.isoformat() if e.valid_to else None,
+        )
+        for e in product.eans
+    ]
+
+    prices = [
+        ProductPriceInfo(
+            id=p.id,
+            source=p.source,
+            price_type=p.price_type,
+            price=float(p.price),
+            currency=p.currency,
+            valid_from=p.valid_from.isoformat() if p.valid_from else None,
+            valid_to=p.valid_to.isoformat() if p.valid_to else None,
+        )
+        for p in product.prices
+    ]
+
+    hs_codes_list = [
+        ProductHsCodeInfo(id=h.id, country=h.country, hs_code=h.hs_code)
+        for h in product.hs_codes
+    ]
 
     resp = _product_to_response(product)
     return ProductDetailResponse(
         **resp.model_dump(),
         suppliers=suppliers,
+        eans=eans,
+        prices=prices,
+        hs_codes=hs_codes_list,
     )
 
 

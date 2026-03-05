@@ -1,5 +1,9 @@
+from __future__ import annotations
+
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import Float, cast, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -8,6 +12,7 @@ from app.models.abda import AbdaImportLog, AbdaPacApo, AbdaPriceHistory
 from app.models.identity_map import IdentityMap
 from app.models.user import User
 from app.schemas.abda import (
+    AbdaLookupResponse,
     AbdaLookupResult,
     AbdaPriceHistoryResponse,
     AbdaStatsResponse,
@@ -16,29 +21,112 @@ from app.services.product_processing import process_abda_to_product
 
 router = APIRouter(prefix="/abda", tags=["abda"])
 
+_OPERATOR_RE = re.compile(r"^(>=|<=|!=|>|<|=)(.+)$")
 
-@router.get("/lookup", response_model=list[AbdaLookupResult])
+
+def _parse_operator(value: str) -> tuple[str, str]:
+    """Parse operator prefix from filter value. Returns (operator, raw_value)."""
+    m = _OPERATOR_RE.match(value.strip())
+    if m:
+        return m.group(1), m.group(2).strip()
+    return "default", value.strip()
+
+
+@router.get("/lookup", response_model=AbdaLookupResponse)
 async def lookup_abda(
-    search: str = Query(..., min_length=1),
-    limit: int = Query(50, le=200),
+    # Legacy single-search param (backward compat)
+    search: str | None = Query(None),
+    # Per-field filters
+    filter_pzn: str | None = Query(None),
+    filter_ean: str | None = Query(None),
+    filter_name: str | None = Query(None),
+    filter_manufacturer: str | None = Query(None),
+    filter_apo_ek: str | None = Query(None),
+    filter_norm_size: str | None = Query(None),
+    # Controls
     exclude_medication: bool = Query(False),
+    limit: int = Query(50, le=200),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    """Search abda_pac_apo by PZN prefix or name."""
-    # Check if search looks like a PZN (numeric)
-    if search.isdigit():
-        condition = AbdaPacApo.pzn.startswith(search)
-    else:
-        condition = AbdaPacApo.langname.ilike(f"%{search}%")
+    """Search abda_pac_apo with per-field filters and operator support."""
+    conditions = []
 
-    query = select(AbdaPacApo).where(condition)
+    # Check if any per-field filter is set
+    has_field_filters = any([
+        filter_pzn, filter_ean, filter_name,
+        filter_manufacturer, filter_apo_ek, filter_norm_size,
+    ])
+
+    if has_field_filters:
+        # Per-field filters
+        if filter_pzn:
+            conditions.append(AbdaPacApo.pzn.startswith(filter_pzn))
+        if filter_ean:
+            conditions.append(AbdaPacApo.gtin.startswith(filter_ean))
+        if filter_name:
+            conditions.append(AbdaPacApo.langname.ilike(f"%{filter_name}%"))
+        if filter_manufacturer:
+            conditions.append(AbdaPacApo.hersteller_name.ilike(f"%{filter_manufacturer}%"))
+        if filter_norm_size:
+            conditions.append(AbdaPacApo.normgroesse.ilike(f"%{filter_norm_size}%"))
+        if filter_apo_ek:
+            op, val = _parse_operator(filter_apo_ek)
+            try:
+                numeric_val = float(val.replace(",", "."))
+            except ValueError:
+                pass  # ignore invalid numeric input
+            else:
+                # Only consider rows where apo_ek is a valid number
+                conditions.append(AbdaPacApo.apo_ek.isnot(None))
+                conditions.append(text("apo_ek ~ '^[0-9]+(\\.[0-9]+)?$'"))
+                apo_ek_num = cast(AbdaPacApo.apo_ek, Float)
+                if op == ">":
+                    conditions.append(apo_ek_num > numeric_val)
+                elif op == "<":
+                    conditions.append(apo_ek_num < numeric_val)
+                elif op == ">=":
+                    conditions.append(apo_ek_num >= numeric_val)
+                elif op == "<=":
+                    conditions.append(apo_ek_num <= numeric_val)
+                elif op == "!=":
+                    conditions.append(apo_ek_num != numeric_val)
+                elif op == "=":
+                    conditions.append(apo_ek_num == numeric_val)
+                else:
+                    # default: exact match
+                    conditions.append(apo_ek_num == numeric_val)
+
+    elif search:
+        # Legacy single-search fallback
+        if search.isdigit():
+            conditions.append(AbdaPacApo.pzn.startswith(search))
+        else:
+            conditions.append(AbdaPacApo.langname.ilike(f"%{search}%"))
+    else:
+        # No filters at all — return empty
+        return AbdaLookupResponse(items=[], total=0, limit=limit, offset=offset)
+
+    # Exclude medication
     if exclude_medication:
-        query = query.where(
+        conditions.append(
             or_(AbdaPacApo.arzneimittel.is_(None), AbdaPacApo.arzneimittel != "J")
         )
 
-    result = await db.execute(query.limit(limit))
+    # Count total
+    count_query = select(func.count()).select_from(AbdaPacApo).where(*conditions)
+    total = (await db.execute(count_query)).scalar() or 0
+
+    # Fetch page
+    query = (
+        select(AbdaPacApo)
+        .where(*conditions)
+        .order_by(AbdaPacApo.langname)
+        .offset(offset)
+        .limit(limit)
+    )
+    result = await db.execute(query)
     articles = result.scalars().all()
 
     # Check which PZNs are already in hub
@@ -53,7 +141,7 @@ async def lookup_abda(
         )
         hub_pzns = {row[0] for row in id_result.all()}
 
-    return [
+    items = [
         AbdaLookupResult(
             pzn=a.pzn,
             ean=a.gtin,
@@ -71,6 +159,8 @@ async def lookup_abda(
         for a in articles
     ]
 
+    return AbdaLookupResponse(items=items, total=total, limit=limit, offset=offset)
+
 
 @router.post("/add-to-hub/{pzn}")
 async def add_abda_to_hub(
@@ -79,7 +169,6 @@ async def add_abda_to_hub(
     user: User = Depends(require_role("manager")),
 ):
     """Create a Product from ABDA data."""
-    # Check if already in hub
     result = await db.execute(
         select(IdentityMap).where(
             IdentityMap.identity_type == "PZN",
@@ -136,11 +225,9 @@ async def abda_stats(
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    # Total articles
     total_result = await db.execute(select(func.count()).select_from(AbdaPacApo))
     total = total_result.scalar() or 0
 
-    # Last import
     last_import = await db.execute(
         select(AbdaImportLog)
         .order_by(AbdaImportLog.created_at.desc())
@@ -148,7 +235,6 @@ async def abda_stats(
     )
     last = last_import.scalar_one_or_none()
 
-    # Total imports
     import_count = await db.execute(select(func.count()).select_from(AbdaImportLog))
 
     return AbdaStatsResponse(

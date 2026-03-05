@@ -46,6 +46,13 @@ class AbdaPriceHistoryResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AbdaLookupResponse(BaseModel):
+    items: list[AbdaLookupResult]
+    total: int
+    limit: int
+    offset: int
+
+
 class AbdaStatsResponse(BaseModel):
     total_articles: int
     last_import_date: str | None
