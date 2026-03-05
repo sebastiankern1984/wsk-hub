@@ -472,101 +472,105 @@ async def import_supplier_csv(
                     supplier_cache[supplier_name] = await _get_or_create_supplier(
                         db, supplier_name
                     )
+                    # Commit supplier immediately so it survives row-level rollbacks
+                    await db.commit()
                 supplier = supplier_cache[supplier_name]
 
-                # ── Match product ──
-                product: Product | None = None
-                match_source = "none"
+                # Use SAVEPOINT for per-row isolation
+                async with db.begin_nested():
+                    # ── Match product ──
+                    product: Product | None = None
+                    match_source = "none"
 
-                pzn = (row.get("pzn") or "").strip() or None
-                gtin_stueck = _strip_leading_zeros_ean(row.get("gtin_stueck"))
-                nan = (row.get("nan") or "").strip() or None
+                    pzn = (row.get("pzn") or "").strip() or None
+                    gtin_stueck = _strip_leading_zeros_ean(row.get("gtin_stueck"))
+                    nan = (row.get("nan") or "").strip() or None
 
-                # Case 1: PZN match
-                if pzn:
-                    product = await _find_product_by_pzn(db, pzn)
-                    if product:
-                        match_source = "pzn_hub"
-                    else:
-                        # Try ABDA auto-create
-                        try:
-                            product = await process_abda_to_product(
-                                db, pzn, user_id=user_id
-                            )
-                            match_source = "pzn_abda"
-                        except ValueError:
-                            pass  # Not in ABDA either
+                    # Case 1: PZN match
+                    if pzn:
+                        product = await _find_product_by_pzn(db, pzn)
+                        if product:
+                            match_source = "pzn_hub"
+                        else:
+                            # Try ABDA auto-create
+                            try:
+                                product = await process_abda_to_product(
+                                    db, pzn, user_id=user_id
+                                )
+                                match_source = "pzn_abda"
+                            except ValueError:
+                                pass  # Not in ABDA either
 
-                # Case 2: EAN match
-                if not product and gtin_stueck:
-                    product = await _find_product_by_ean(db, gtin_stueck)
-                    if product:
-                        match_source = "ean"
+                    # Case 2: EAN match
+                    if not product and gtin_stueck:
+                        product = await _find_product_by_ean(db, gtin_stueck)
+                        if product:
+                            match_source = "ean"
 
-                # Case 3: NAN match
-                if not product and nan:
-                    product = await _find_product_by_nan(db, nan)
-                    if product:
-                        match_source = "nan"
+                    # Case 3: NAN match
+                    if not product and nan:
+                        product = await _find_product_by_nan(db, nan)
+                        if product:
+                            match_source = "nan"
 
-                # Case 4: Skeleton
-                if not product:
-                    product = await _create_skeleton_product(db, row, user_id)
-                    match_source = "skeleton"
+                    # Case 4: Skeleton
+                    if not product:
+                        product = await _create_skeleton_product(db, row, user_id)
+                        match_source = "skeleton"
 
-                # ── Enrich product with supplier data (fill empty fields) ──
-                _enrich_product(product, row)
+                    # ── Enrich product with supplier data (fill empty fields) ──
+                    _enrich_product(product, row)
 
-                # ── Create supplier_product link ──
-                supplier_sku = (row.get("supplier_sku") or "").strip() or None
+                    # ── Create supplier_product link ──
+                    supplier_sku = (row.get("supplier_sku") or "").strip() or None
 
-                # Check if link already exists
-                existing_link = await db.execute(
-                    select(SupplierProduct).where(
-                        SupplierProduct.product_id == product.id,
-                        SupplierProduct.supplier_id == supplier.id,
+                    # Check if link already exists
+                    existing_link = await db.execute(
+                        select(SupplierProduct).where(
+                            SupplierProduct.product_id == product.id,
+                            SupplierProduct.supplier_id == supplier.id,
+                        )
                     )
-                )
-                sp = existing_link.scalar_one_or_none()
+                    sp = existing_link.scalar_one_or_none()
 
-                ek_price = _parse_price(row.get("ek_preis"))
-                uvp = _parse_price(row.get("uvp"))
-                valid_from = _parse_date(row.get("gueltig_ab"))
-                valid_until = _parse_date(row.get("gueltig_bis"))
-                source_data = _build_source_data(row)
+                    ek_price = _parse_price(row.get("ek_preis"))
+                    uvp = _parse_price(row.get("uvp"))
+                    valid_from = _parse_date(row.get("gueltig_ab"))
+                    valid_until = _parse_date(row.get("gueltig_bis"))
+                    source_data = _build_source_data(row)
 
-                if sp:
-                    # Update existing link
-                    sp.supplier_sku = supplier_sku or sp.supplier_sku
-                    if ek_price is not None:
-                        sp.purchase_price = ek_price
-                    if uvp is not None and uvp > 0:
-                        sp.retail_price = uvp
-                    sp.valid_from = valid_from or sp.valid_from
-                    sp.valid_until = valid_until or sp.valid_until
-                    sp.source_data = source_data
-                else:
-                    db.add(SupplierProduct(
-                        product_id=product.id,
-                        supplier_id=supplier.id,
-                        supplier_sku=supplier_sku,
-                        purchase_price=ek_price,
-                        retail_price=uvp if uvp and uvp > 0 else None,
-                        valid_from=valid_from,
-                        valid_until=valid_until,
-                        source_data=source_data,
-                    ))
+                    if sp:
+                        # Update existing link
+                        sp.supplier_sku = supplier_sku or sp.supplier_sku
+                        if ek_price is not None:
+                            sp.purchase_price = ek_price
+                        if uvp is not None and uvp > 0:
+                            sp.retail_price = uvp
+                        sp.valid_from = valid_from or sp.valid_from
+                        sp.valid_until = valid_until or sp.valid_until
+                        sp.source_data = source_data
+                    else:
+                        db.add(SupplierProduct(
+                            product_id=product.id,
+                            supplier_id=supplier.id,
+                            supplier_sku=supplier_sku,
+                            purchase_price=ek_price,
+                            retail_price=uvp if uvp and uvp > 0 else None,
+                            valid_from=valid_from,
+                            valid_until=valid_until,
+                            source_data=source_data,
+                        ))
 
-                # ── Add EANs ──
-                await _add_eans_if_new(
-                    db, product,
-                    row.get("gtin_stueck"),
-                    row.get("gtin_karton"),
-                    source=f"supplier:{supplier_name}",
-                )
+                    # ── Add EANs ──
+                    await _add_eans_if_new(
+                        db, product,
+                        row.get("gtin_stueck"),
+                        row.get("gtin_karton"),
+                        source=f"supplier:{supplier_name}",
+                    )
 
-                # ── Add HS code ──
-                await _add_hs_code_if_new(db, product, row.get("zolltarifnummer"))
+                    # ── Add HS code ──
+                    await _add_hs_code_if_new(db, product, row.get("zolltarifnummer"))
 
                 imported += 1
 
@@ -586,11 +590,7 @@ async def import_supplier_csv(
                     "Row %d error: %s — %s", i + 1, str(e), row.get("name", "?")
                 )
                 skipped += 1
-                await db.rollback()
-                # Re-fetch log after rollback
-                log = await db.get(ImportLog, import_log_id)
-                if not log:
-                    return
+                # SAVEPOINT rollback already happened, no need to rollback session
                 continue
 
         log.processed_rows = processed
