@@ -9,6 +9,8 @@ from app.routers.settings import router as settings_router
 from app.routers.imports import router as imports_router
 from app.routers.abda import router as abda_router
 from app.routers.alphaplan import router as alphaplan_router
+from app.routers.discount_rules import router as discount_rules_router
+from app.routers.discount_rules import recalculate_router
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(auth_router)
@@ -20,3 +22,5 @@ api_router.include_router(settings_router)
 api_router.include_router(imports_router)
 api_router.include_router(abda_router)
 api_router.include_router(alphaplan_router)
+api_router.include_router(discount_rules_router)
+api_router.include_router(recalculate_router)

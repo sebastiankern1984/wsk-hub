@@ -290,6 +290,31 @@ export interface SupplierImportLog {
   created_at: string;
 }
 
+// Discount Rule types
+export interface DiscountRule {
+  id: number;
+  supplier_id: number;
+  scope: "pzn" | "manufacturer";
+  pzn: string | null;
+  manufacturer_name: string | null;
+  discount_percent: number;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RecalculationResult {
+  total: number;
+  updated: number;
+}
+
+export interface CsvImportResult {
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: string[];
+}
+
 export interface AlphaplanStatus {
   status: string;
   message: string;
@@ -398,6 +423,41 @@ export const api = {
   },
   getSupplierImports: () => fetchAPI<SupplierImportLog[]>("/api/imports/supplier"),
   getSupplierImportProgress: (id: number) => fetchAPI<SupplierImportLog>(`/api/imports/supplier/${id}`),
+
+  // Discount Rules
+  getDiscountRules: (supplierId: number, params?: URLSearchParams) =>
+    fetchAPI<DiscountRule[]>(`/api/suppliers/${supplierId}/discount-rules${params ? `?${params}` : ""}`),
+
+  getDiscountRuleCount: (supplierId: number) =>
+    fetchAPI<{ count: number }>(`/api/suppliers/${supplierId}/discount-rules/count`),
+
+  createDiscountRule: (supplierId: number, data: { scope: string; pzn?: string; manufacturer_name?: string; discount_percent: number; note?: string }) =>
+    fetchAPI<DiscountRule>(`/api/suppliers/${supplierId}/discount-rules`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateDiscountRule: (supplierId: number, ruleId: number, data: { discount_percent?: number; note?: string }) =>
+    fetchAPI<DiscountRule>(`/api/suppliers/${supplierId}/discount-rules/${ruleId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  deleteDiscountRule: (supplierId: number, ruleId: number) =>
+    fetchAPI<void>(`/api/suppliers/${supplierId}/discount-rules/${ruleId}`, {
+      method: "DELETE",
+    }).catch(() => {}),
+
+  importDiscountRulesCsv: (supplierId: number, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return fetchAPIFormData<CsvImportResult>(`/api/suppliers/${supplierId}/discount-rules/import-csv`, fd);
+  },
+
+  recalculateSupplier: (supplierId: number) =>
+    fetchAPI<RecalculationResult>(`/api/suppliers/${supplierId}/recalculate`, {
+      method: "POST",
+    }),
 
   // Alphaplan
   getAlphaplanStatus: () => fetchAPI<AlphaplanStatus>("/api/alphaplan/status"),

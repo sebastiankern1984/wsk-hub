@@ -11,6 +11,7 @@ from app.models.identity_map import IdentityMap
 from app.models.manufacturer import Manufacturer
 from app.models.product import Product
 from app.models.product_ean import ProductEan
+from app.models.product_price import ProductPrice
 from app.services.event_store import append_event
 
 logger = logging.getLogger(__name__)
@@ -173,7 +174,29 @@ async def process_abda_to_product(
                 source="abda",
             ))
 
-    # 8. Event store
+    # 8. ProductPrice: apo_ek als Basis-EK von Quelle "abda"
+    apo_ek_val = _safe_float(abda.apo_ek)
+    if apo_ek_val and apo_ek_val > 0:
+        result = await db.execute(
+            select(ProductPrice).where(
+                ProductPrice.product_id == product.id,
+                ProductPrice.source == "abda",
+                ProductPrice.price_type == "purchase",
+            )
+        )
+        pp = result.scalar_one_or_none()
+        if pp:
+            pp.price = apo_ek_val
+        else:
+            db.add(ProductPrice(
+                product_id=product.id,
+                source="abda",
+                price_type="purchase",
+                price=apo_ek_val,
+                currency="EUR",
+            ))
+
+    # 9. Event store
     await append_event(
         db,
         event_type=event_type,

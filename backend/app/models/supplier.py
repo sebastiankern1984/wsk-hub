@@ -11,6 +11,7 @@ from app.database import Base
 
 if TYPE_CHECKING:
     from app.models.import_log import ImportLog
+    from app.models.supplier_discount_rule import SupplierDiscountRule
     from app.models.supplier_product import SupplierProduct
 
 
@@ -28,3 +29,6 @@ class Supplier(Base):
         back_populates="supplier", cascade="all, delete-orphan"
     )
     import_logs: Mapped[List["ImportLog"]] = relationship(back_populates="supplier")
+    discount_rules: Mapped[List["SupplierDiscountRule"]] = relationship(
+        back_populates="supplier", cascade="all, delete-orphan"
+    )

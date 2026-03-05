@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { api, type Supplier, type SupplierImportLog } from "@/api/client";
 import {
   Truck,
@@ -59,6 +60,7 @@ export default function Suppliers() {
 
 /* ── List Tab ── */
 function ListTab() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
@@ -183,7 +185,8 @@ function ListTab() {
               suppliers.map((supplier) => (
                 <tr
                   key={supplier.id}
-                  className="transition-colors hover:bg-muted/50"
+                  onClick={() => navigate(`/connectors/suppliers/${supplier.id}`)}
+                  className="cursor-pointer transition-colors hover:bg-muted/50"
                 >
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">

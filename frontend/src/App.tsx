@@ -7,6 +7,7 @@ import Dashboard from "./pages/Dashboard";
 import Products from "./pages/Products";
 import ProductDetail from "./pages/ProductDetail";
 import Suppliers from "./pages/Suppliers";
+import SupplierDetail from "./pages/SupplierDetail";
 import Events from "./pages/Events";
 import AbdaConnector from "./pages/AbdaConnector";
 import Settings from "./pages/Settings";
@@ -24,6 +25,7 @@ export default function App() {
             <Route path="/events" element={<Events />} />
             <Route path="/connectors/abda" element={<AbdaConnector />} />
             <Route path="/connectors/suppliers" element={<Suppliers />} />
+            <Route path="/connectors/suppliers/:id" element={<SupplierDetail />} />
             <Route path="/settings" element={<Settings />} />
           </Route>
         </Route>

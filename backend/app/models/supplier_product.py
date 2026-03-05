@@ -31,6 +31,8 @@ class SupplierProduct(Base):
     source_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     valid_from: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     valid_until: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    # How the purchase_price was derived: "pzn_override", "manufacturer_override", "supplier_default", None
+    discount_source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     product: Mapped["Product"] = relationship(back_populates="supplier_products")

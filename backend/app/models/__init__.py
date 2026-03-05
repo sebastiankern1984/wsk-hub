@@ -11,6 +11,7 @@ from app.models.product_price import ProductPrice
 from app.models.product_hs_code import ProductHsCode
 from app.models.product_source_value import ProductSourceValue
 from app.models.setting import Setting
+from app.models.supplier_discount_rule import SupplierDiscountRule
 from app.models.abda import (
     AbdaPacApo,
     AbdaAdrApo,
@@ -34,6 +35,7 @@ __all__ = [
     "ProductHsCode",
     "ProductSourceValue",
     "Setting",
+    "SupplierDiscountRule",
     "AbdaPacApo",
     "AbdaAdrApo",
     "AbdaPgr2Apo",
