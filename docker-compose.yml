@@ -1,0 +1,57 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: wskhub-db
+    environment:
+      POSTGRES_USER: wskhub
+      POSTGRES_PASSWORD: wskhub
+      POSTGRES_DB: wskhub
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5436:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wskhub"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: wskhub-backend
+    restart: unless-stopped
+    ports:
+      - "3095:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://wskhub:wskhub@db:5432/wskhub
+      DATABASE_URL_SYNC: postgresql+psycopg2://wskhub:wskhub@db:5432/wskhub
+      IMPORT_DB_HOST: db
+      IMPORT_DB_PORT: "5432"
+      IMPORT_DB_USER: wskhub
+      IMPORT_DB_PASSWORD: wskhub
+      IMPORT_DB_NAME: wskhub
+      JWT_SECRET: wskhub-jwt-secret-change-in-prod
+      LDAP_URL: ldap://10.55.88.21
+      LDAP_DOMAIN: ad.wsk-medical.de
+      CORS_ORIGINS: '["http://localhost:3096","http://10.55.88.249:3096"]'
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: http://10.55.88.249:3095
+    container_name: wskhub-frontend
+    restart: unless-stopped
+    ports:
+      - "3096:4173"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
