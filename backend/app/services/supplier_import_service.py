@@ -348,16 +348,17 @@ async def _add_eans_if_new(
     gtin_karton: str | None,
     source: str,
 ):
-    """Add EANs to product if they don't already exist."""
+    """Add EANs to product if they don't already exist globally."""
     for ean_val, ean_type in [(gtin_stueck, "pack"), (gtin_karton, "ve")]:
         clean = _strip_leading_zeros_ean(ean_val)
         if not clean:
             continue
+        # Check globally (unique constraint is on ean_type+ean_value where valid_to IS NULL)
         result = await db.execute(
             select(ProductEan).where(
-                ProductEan.product_id == product.id,
                 ProductEan.ean_type == ean_type,
                 ProductEan.ean_value == clean,
+                ProductEan.valid_to.is_(None),
             )
         )
         if not result.scalar_one_or_none():
