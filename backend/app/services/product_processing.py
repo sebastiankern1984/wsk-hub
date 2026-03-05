@@ -179,6 +179,7 @@ async def process_abda_to_product(
         event_type=event_type,
         aggregate_type="product",
         aggregate_id=product.product_id,
+        aggregate_version=product.version,
         payload={"pzn": pzn, "name": product.name, "source": "abda"},
         source="abda_import",
         user_id=user_id,
