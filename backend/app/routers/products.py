@@ -200,6 +200,8 @@ async def create_product(
         user_id=user.username,
     )
 
+    # Eagerly load supplier_products for response
+    await db.refresh(product, ["supplier_products"])
     return _product_to_response(product)
 
 
