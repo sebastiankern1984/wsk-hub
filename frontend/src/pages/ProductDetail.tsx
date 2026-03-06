@@ -174,16 +174,28 @@ export default function ProductDetail() {
               value={product.ve_per_palette != null ? String(product.ve_per_palette) : null}
             />
             <Field
-              label="Breite"
-              value={product.width_mm != null ? `${product.width_mm} mm` : null}
+              label="Stück Breite"
+              value={product.piece_width_mm != null ? `${product.piece_width_mm} mm` : null}
             />
             <Field
-              label="Höhe"
-              value={product.height_mm != null ? `${product.height_mm} mm` : null}
+              label="Stück Höhe"
+              value={product.piece_height_mm != null ? `${product.piece_height_mm} mm` : null}
             />
             <Field
-              label="Länge"
-              value={product.length_mm != null ? `${product.length_mm} mm` : null}
+              label="Stück Länge"
+              value={product.piece_length_mm != null ? `${product.piece_length_mm} mm` : null}
+            />
+            <Field
+              label="VE Breite"
+              value={product.case_width_mm != null ? `${product.case_width_mm} mm` : null}
+            />
+            <Field
+              label="VE Höhe"
+              value={product.case_height_mm != null ? `${product.case_height_mm} mm` : null}
+            />
+            <Field
+              label="VE Länge"
+              value={product.case_length_mm != null ? `${product.case_length_mm} mm` : null}
             />
           </dl>
         </Section>

@@ -11,6 +11,7 @@ from app.database import Base
 
 if TYPE_CHECKING:
     from app.models.import_log import ImportLog
+    from app.models.import_profile import ImportProfile
     from app.models.supplier_column_mapping import SupplierColumnMapping
     from app.models.supplier_discount_rule import SupplierDiscountRule
     from app.models.supplier_product import SupplierProduct
@@ -34,5 +35,8 @@ class Supplier(Base):
         back_populates="supplier", cascade="all, delete-orphan"
     )
     column_mappings: Mapped[List["SupplierColumnMapping"]] = relationship(
+        back_populates="supplier", cascade="all, delete-orphan"
+    )
+    import_profiles: Mapped[List["ImportProfile"]] = relationship(
         back_populates="supplier", cascade="all, delete-orphan"
     )

@@ -71,10 +71,15 @@ class Product(Base):
     weight_ve_g: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     weight_palette_g: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
-    # Dimensions (mm)
-    width_mm: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    height_mm: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    length_mm: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Dimensions — Piece (mm)
+    piece_width_mm: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    piece_height_mm: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    piece_length_mm: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    # Dimensions — Case/VE (mm)
+    case_width_mm: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    case_height_mm: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    case_length_mm: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     # Packaging hierarchy
     units_per_ve: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

@@ -6,6 +6,7 @@ import {
   type DiscountRule,
   type RecalculationResult,
   type HubFieldInfo,
+  type ImportProfile,
 } from "@/api/client";
 import {
   ArrowLeft,
@@ -320,7 +321,7 @@ function OverviewTab({
   );
 }
 
-/* ── Mapping Tab ── */
+/* ── Mapping Tab (Profile-based) ── */
 const CATEGORY_LABELS: Record<string, string> = {
   identifikation: "Identifikation",
   artikeldaten: "Artikeldaten",
@@ -339,12 +340,24 @@ function MappingTab({
 }) {
   const { user } = useAuth();
   const canEdit = user?.role === "admin" || user?.role === "manager";
+
+  // Profile state
+  const [profiles, setProfiles] = useState<ImportProfile[]>([]);
+  const [selectedProfileId, setSelectedProfileId] = useState<number | null>(null);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [loadingProfiles, setLoadingProfiles] = useState(true);
+
+  // Hub fields
   const [hubFields, setHubFields] = useState<HubFieldInfo[]>([]);
+
+  // Mapping state (for selected profile)
   const [mappings, setMappings] = useState<
     { csv_column: string; hub_field: string }[]
   >([]);
-  const [exampleValues, setExampleValues] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
+  const [exampleValues, setExampleValues] = useState<Record<string, string>>(
+    {}
+  );
+  const [loadingMappings, setLoadingMappings] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [detecting, setDetecting] = useState(false);
@@ -359,31 +372,91 @@ function MappingTab({
     {}
   );
 
+  const selectedProfile =
+    profiles.find((p) => p.id === selectedProfileId) || null;
+
+  // Load profiles and hub fields
   useEffect(() => {
-    Promise.all([
-      api.getHubFields(),
-      api.getColumnMappings(supplierId),
-    ])
-      .then(([fields, existing]) => {
+    Promise.all([api.getImportProfiles(supplierId), api.getHubFields()])
+      .then(([profs, fields]) => {
+        setProfiles(profs);
         setHubFields(fields);
-        setMappings(
-          existing.map((m) => ({
-            csv_column: m.csv_column,
-            hub_field: m.hub_field,
-          }))
-        );
+        if (profs.length > 0) {
+          setSelectedProfileId(profs[0].id);
+        }
       })
       .catch(console.error)
-      .finally(() => setLoading(false));
+      .finally(() => setLoadingProfiles(false));
   }, [supplierId]);
 
+  // Load mappings when profile changes
+  useEffect(() => {
+    if (!selectedProfileId) {
+      setMappings([]);
+      setExampleValues({});
+      return;
+    }
+    setLoadingMappings(true);
+    api
+      .getProfileMappings(supplierId, selectedProfileId)
+      .then((ms) => {
+        setMappings(
+          ms.map((m) => ({ csv_column: m.csv_column, hub_field: m.hub_field }))
+        );
+        setExampleValues({});
+      })
+      .catch(console.error)
+      .finally(() => setLoadingMappings(false));
+  }, [supplierId, selectedProfileId]);
+
+  // Profile CRUD
+  const handleCreateProfile = async (data: {
+    profile_code: string;
+    profile_name: string;
+    file_type: string;
+    description?: string;
+  }) => {
+    const profile = await api.createImportProfile(supplierId, data);
+    setProfiles((prev) => [...prev, profile]);
+    setSelectedProfileId(profile.id);
+    setShowCreateForm(false);
+  };
+
+  const handleDeleteProfile = async (profileId: number) => {
+    if (
+      !confirm(
+        "Import-Profil wirklich löschen? Alle Mappings gehen verloren."
+      )
+    )
+      return;
+    await api.deleteImportProfile(supplierId, profileId);
+    setProfiles((prev) => prev.filter((p) => p.id !== profileId));
+    if (selectedProfileId === profileId) {
+      const remaining = profiles.filter((p) => p.id !== profileId);
+      setSelectedProfileId(remaining.length > 0 ? remaining[0].id : null);
+    }
+  };
+
+  // Mapping operations
   const handleSave = async () => {
+    if (!selectedProfileId) return;
     setSaving(true);
     setSaved(false);
     try {
-      const result = await api.saveColumnMappings(supplierId, mappings);
+      const result = await api.saveProfileMappings(
+        supplierId,
+        selectedProfileId,
+        mappings
+      );
       setMappings(
         result.map((m) => ({ csv_column: m.csv_column, hub_field: m.hub_field }))
+      );
+      setProfiles((prev) =>
+        prev.map((p) =>
+          p.id === selectedProfileId
+            ? { ...p, mapping_count: result.length }
+            : p
+        )
       );
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -413,17 +486,20 @@ function MappingTab({
   };
 
   const handleAutoDetect = async (file: File) => {
+    if (!selectedProfileId) return;
     setDetecting(true);
     try {
-      // Send file to backend for header extraction + auto-detection
-      const results = await api.autoDetectMappingsFromFile(supplierId, file);
+      const results = await api.autoDetectProfileFromFile(
+        supplierId,
+        selectedProfileId,
+        file
+      );
       setMappings(
         results.map((r) => ({
           csv_column: r.csv_column,
           hub_field: r.hub_field || "",
         }))
       );
-      // Store example values keyed by csv_column
       const examples: Record<string, string> = {};
       for (const r of results) {
         if (r.example_value) examples[r.csv_column] = r.example_value;
@@ -431,7 +507,9 @@ function MappingTab({
       setExampleValues(examples);
     } catch (e) {
       console.error(e);
-      alert("Auto-Erkennung fehlgeschlagen. Bitte CSV oder Excel-Datei hochladen.");
+      alert(
+        "Auto-Erkennung fehlgeschlagen. Bitte CSV oder Excel-Datei hochladen."
+      );
     } finally {
       setDetecting(false);
     }
@@ -439,10 +517,10 @@ function MappingTab({
 
   const handleDownloadTemplate = (format: "csv" | "xlsx") => {
     const token = localStorage.getItem("token");
-    const url = mappings.length > 0
-      ? `/api/suppliers/${supplierId}/import-template?format=${format}`
-      : `/api/imports/supplier/template?format=${format}`;
-    // Trigger download via fetch
+    const url =
+      mappings.length > 0
+        ? `/api/suppliers/${supplierId}/import-template?format=${format}`
+        : `/api/imports/supplier/template?format=${format}`;
     fetch(url, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
@@ -456,7 +534,7 @@ function MappingTab({
       });
   };
 
-  if (loading) {
+  if (loadingProfiles) {
     return (
       <div className="flex items-center justify-center py-12 text-muted-foreground">
         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -467,219 +545,434 @@ function MappingTab({
 
   return (
     <div className="space-y-4">
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-3">
-        {canEdit && (
-          <>
+      {/* ── Profile selector ── */}
+      <div className="rounded-xl border border-border bg-card p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <FileSpreadsheet className="h-4 w-4" />
+            Import-Profile
+          </h3>
+          {canEdit && (
             <button
-              onClick={handleSave}
-              disabled={saving}
-              className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
-              {saving ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Save className="h-3.5 w-3.5" />
-              )}
-              Speichern
-            </button>
-            {saved && (
-              <span className="inline-flex items-center gap-1 text-sm text-emerald-500">
-                <CheckCircle2 className="h-4 w-4" />
-                Gespeichert
-              </span>
-            )}
-            <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent">
-              {detecting ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Wand2 className="h-3.5 w-3.5" />
-              )}
-              Auto-Erkennung
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".csv,.xlsx,.xls"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) handleAutoDetect(f);
-                  e.target.value = "";
-                }}
-              />
-            </label>
-            <button
-              onClick={handleAddRow}
-              className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent"
+              onClick={() => setShowCreateForm(!showCreateForm)}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs hover:bg-accent"
             >
               <Plus className="h-3.5 w-3.5" />
-              Zeile hinzufügen
+              Neues Profil
             </button>
-          </>
+          )}
+        </div>
+
+        {/* Create form */}
+        {showCreateForm && (
+          <ProfileCreateForm
+            onSubmit={handleCreateProfile}
+            onCancel={() => setShowCreateForm(false)}
+          />
         )}
-        <div className="ml-auto flex gap-2">
-          <button
-            onClick={() => handleDownloadTemplate("csv")}
-            className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent"
-          >
-            <Download className="h-3.5 w-3.5" />
-            CSV-Vorlage
-          </button>
-          <button
-            onClick={() => handleDownloadTemplate("xlsx")}
-            className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent"
-          >
-            <Download className="h-3.5 w-3.5" />
-            Excel-Vorlage
-          </button>
-        </div>
-      </div>
 
-      {/* Info box */}
-      <div className="rounded-lg border border-border bg-card p-4">
-        <div className="flex items-start gap-2">
-          <Info className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground" />
-          <div className="text-sm text-muted-foreground">
-            <p>
-              Ordne die CSV/Excel-Spalten deiner Import-Datei den Hub-Feldern
-              zu. Bei <strong>Auto-Erkennung</strong> wird eine Datei
-              hochgeladen und die Spalten automatisch erkannt.
-            </p>
-            <p className="mt-1">
-              Ohne Mapping wird beim Import das{" "}
-              <strong>Standard-Format</strong> (Hub-Feld-Labels als
-              Spaltennamen) verwendet.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Mapping table */}
-      <div className="rounded-xl border border-border bg-card">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border">
-              <th className="px-4 py-3 text-left font-medium text-muted-foreground">
-                CSV/Excel-Spalte
-              </th>
-              {Object.keys(exampleValues).length > 0 && (
-                <th className="px-4 py-3 text-left font-medium text-muted-foreground">
-                  Beispielwert
-                </th>
-              )}
-              <th className="px-4 py-3 text-left font-medium text-muted-foreground">
-                → Hub-Feld
-              </th>
-              <th className="px-4 py-3 text-left font-medium text-muted-foreground w-32">
-                Typ
-              </th>
-              {canEdit && (
-                <th className="px-4 py-3 w-16" />
-              )}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {mappings.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={canEdit ? 5 : 4}
-                  className="px-4 py-8 text-center text-muted-foreground"
-                >
-                  Kein Mapping konfiguriert. Nutze „Auto-Erkennung" oder füge
-                  Zeilen manuell hinzu.
-                </td>
-              </tr>
-            ) : (
-              mappings.map((m, idx) => {
-                const matchedField = hubFields.find(
-                  (f) => f.key === m.hub_field
-                );
-                return (
-                  <tr
-                    key={idx}
-                    className="transition-colors hover:bg-muted/50"
+        {/* Profile pills */}
+        {profiles.length === 0 && !showCreateForm ? (
+          <p className="text-sm text-muted-foreground py-2">
+            Noch keine Import-Profile vorhanden. Erstelle ein Profil für jedes
+            Dateiformat (z.B. „Komplett", „Preisänderung", „Ordersatz").
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {profiles.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => setSelectedProfileId(p.id)}
+                className={`group relative inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
+                  selectedProfileId === p.id
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border bg-background text-foreground hover:bg-muted"
+                }`}
+              >
+                <FileSpreadsheet className="h-3.5 w-3.5 flex-shrink-0" />
+                <div className="text-left">
+                  <div className="font-medium">{p.profile_name}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {p.file_type.toUpperCase()} · {p.mapping_count} Felder
+                  </div>
+                </div>
+                {canEdit && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteProfile(p.id);
+                    }}
+                    className="ml-1 hidden h-5 w-5 items-center justify-center rounded hover:bg-destructive/10 group-hover:inline-flex"
+                    title="Profil löschen"
                   >
-                    <td className="px-4 py-2">
-                      {canEdit ? (
-                        <input
-                          type="text"
-                          value={m.csv_column}
-                          onChange={(e) =>
-                            handleChange(idx, "csv_column", e.target.value)
-                          }
-                          placeholder="Spaltenname aus Datei"
-                          className="flex h-8 w-full rounded-md border border-input bg-background px-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        />
-                      ) : (
-                        <span className="font-mono text-xs">
-                          {m.csv_column}
-                        </span>
-                      )}
-                    </td>
-                    {Object.keys(exampleValues).length > 0 && (
-                      <td className="px-4 py-2 text-xs text-muted-foreground font-mono max-w-[200px] truncate" title={exampleValues[m.csv_column] || ""}>
-                        {exampleValues[m.csv_column] || "–"}
-                      </td>
-                    )}
-                    <td className="px-4 py-2">
-                      {canEdit ? (
-                        <select
-                          value={m.hub_field}
-                          onChange={(e) =>
-                            handleChange(idx, "hub_field", e.target.value)
-                          }
-                          className="flex h-8 w-full rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        >
-                          <option value="">– Nicht zugeordnet –</option>
-                          {Object.entries(fieldsByCategory).map(
-                            ([cat, fields]) => (
-                              <optgroup
-                                key={cat}
-                                label={CATEGORY_LABELS[cat] || cat}
-                              >
-                                {fields.map((f) => (
-                                  <option key={f.key} value={f.key}>
-                                    {f.label} ({f.key})
-                                  </option>
-                                ))}
-                              </optgroup>
-                            )
-                          )}
-                        </select>
-                      ) : (
-                        <span>
-                          {matchedField
-                            ? `${matchedField.label} (${matchedField.key})`
-                            : m.hub_field}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2 text-xs text-muted-foreground">
-                      {matchedField?.field_type || "–"}
-                    </td>
-                    {canEdit && (
-                      <td className="px-4 py-2 text-center">
-                        <button
-                          onClick={() => handleRemoveRow(idx)}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded hover:bg-destructive/10"
-                        >
-                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                        </button>
-                      </td>
-                    )}
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+                    <X className="h-3 w-3 text-destructive" />
+                  </button>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
-      {mappings.length > 0 && (
-        <p className="text-xs text-muted-foreground">
-          {mappings.filter((m) => m.hub_field).length} von {mappings.length}{" "}
-          Spalten zugeordnet
-        </p>
+
+      {/* ── Selected profile: mapping editor ── */}
+      {selectedProfile && (
+        <>
+          {/* Profile info */}
+          <div className="rounded-lg border border-border bg-card p-4">
+            <div className="flex items-start gap-2">
+              <Info className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground" />
+              <div className="text-sm text-muted-foreground">
+                <p>
+                  <strong>{selectedProfile.profile_name}</strong> (
+                  {selectedProfile.profile_code})
+                  {selectedProfile.description && (
+                    <> — {selectedProfile.description}</>
+                  )}
+                </p>
+                <p className="mt-1">
+                  Ordne die Spalten deiner{" "}
+                  <strong>
+                    {selectedProfile.file_type.toUpperCase()}
+                  </strong>
+                  -Datei den Hub-Feldern zu. Nutze{" "}
+                  <strong>Auto-Erkennung</strong> um Spalten automatisch zu
+                  erkennen.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Toolbar */}
+          <div className="flex flex-wrap items-center gap-3">
+            {canEdit && (
+              <>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {saving ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Save className="h-3.5 w-3.5" />
+                  )}
+                  Speichern
+                </button>
+                {saved && (
+                  <span className="inline-flex items-center gap-1 text-sm text-emerald-500">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Gespeichert
+                  </span>
+                )}
+                <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent">
+                  {detecting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Wand2 className="h-3.5 w-3.5" />
+                  )}
+                  Auto-Erkennung
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept=".csv,.xlsx,.xls"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleAutoDetect(f);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+                <button
+                  onClick={handleAddRow}
+                  className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Zeile hinzufügen
+                </button>
+              </>
+            )}
+            <div className="ml-auto flex gap-2">
+              <button
+                onClick={() => handleDownloadTemplate("csv")}
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent"
+              >
+                <Download className="h-3.5 w-3.5" />
+                CSV-Vorlage
+              </button>
+              <button
+                onClick={() => handleDownloadTemplate("xlsx")}
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Excel-Vorlage
+              </button>
+            </div>
+          </div>
+
+          {/* Mapping table */}
+          {loadingMappings ? (
+            <div className="flex items-center justify-center py-8 text-muted-foreground">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Mappings laden...
+            </div>
+          ) : (
+            <>
+              <div className="rounded-xl border border-border bg-card">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                        CSV/Excel-Spalte
+                      </th>
+                      {Object.keys(exampleValues).length > 0 && (
+                        <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                          Beispielwert
+                        </th>
+                      )}
+                      <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                        → Hub-Feld
+                      </th>
+                      <th className="px-4 py-3 text-left font-medium text-muted-foreground w-32">
+                        Typ
+                      </th>
+                      {canEdit && <th className="px-4 py-3 w-16" />}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {mappings.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={canEdit ? 5 : 4}
+                          className="px-4 py-8 text-center text-muted-foreground"
+                        >
+                          Kein Mapping konfiguriert. Nutze „Auto-Erkennung"
+                          oder füge Zeilen manuell hinzu.
+                        </td>
+                      </tr>
+                    ) : (
+                      mappings.map((m, idx) => {
+                        const matchedField = hubFields.find(
+                          (f) => f.key === m.hub_field
+                        );
+                        return (
+                          <tr
+                            key={idx}
+                            className="transition-colors hover:bg-muted/50"
+                          >
+                            <td className="px-4 py-2">
+                              {canEdit ? (
+                                <input
+                                  type="text"
+                                  value={m.csv_column}
+                                  onChange={(e) =>
+                                    handleChange(
+                                      idx,
+                                      "csv_column",
+                                      e.target.value
+                                    )
+                                  }
+                                  placeholder="Spaltenname aus Datei"
+                                  className="flex h-8 w-full rounded-md border border-input bg-background px-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                />
+                              ) : (
+                                <span className="font-mono text-xs">
+                                  {m.csv_column}
+                                </span>
+                              )}
+                            </td>
+                            {Object.keys(exampleValues).length > 0 && (
+                              <td
+                                className="px-4 py-2 text-xs text-muted-foreground font-mono max-w-[200px] truncate"
+                                title={exampleValues[m.csv_column] || ""}
+                              >
+                                {exampleValues[m.csv_column] || "–"}
+                              </td>
+                            )}
+                            <td className="px-4 py-2">
+                              {canEdit ? (
+                                <select
+                                  value={m.hub_field}
+                                  onChange={(e) =>
+                                    handleChange(
+                                      idx,
+                                      "hub_field",
+                                      e.target.value
+                                    )
+                                  }
+                                  className="flex h-8 w-full rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                >
+                                  <option value="">
+                                    – Nicht zugeordnet –
+                                  </option>
+                                  {Object.entries(fieldsByCategory).map(
+                                    ([cat, fields]) => (
+                                      <optgroup
+                                        key={cat}
+                                        label={
+                                          CATEGORY_LABELS[cat] || cat
+                                        }
+                                      >
+                                        {fields.map((f) => (
+                                          <option key={f.key} value={f.key}>
+                                            {f.label} ({f.key})
+                                          </option>
+                                        ))}
+                                      </optgroup>
+                                    )
+                                  )}
+                                </select>
+                              ) : (
+                                <span>
+                                  {matchedField
+                                    ? `${matchedField.label} (${matchedField.key})`
+                                    : m.hub_field}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2 text-xs text-muted-foreground">
+                              {matchedField?.field_type || "–"}
+                            </td>
+                            {canEdit && (
+                              <td className="px-4 py-2 text-center">
+                                <button
+                                  onClick={() => handleRemoveRow(idx)}
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded hover:bg-destructive/10"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                                </button>
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {mappings.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {mappings.filter((m) => m.hub_field).length} von{" "}
+                  {mappings.length} Spalten zugeordnet
+                </p>
+              )}
+            </>
+          )}
+        </>
       )}
+    </div>
+  );
+}
+
+/* ── Profile Create Form ── */
+function ProfileCreateForm({
+  onSubmit,
+  onCancel,
+}: {
+  onSubmit: (data: {
+    profile_code: string;
+    profile_name: string;
+    file_type: string;
+    description?: string;
+  }) => void;
+  onCancel: () => void;
+}) {
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [fileType, setFileType] = useState("csv");
+  const [description, setDescription] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    if (!code.trim() || !name.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await onSubmit({
+        profile_code: code
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, "-"),
+        profile_name: name.trim(),
+        file_type: fileType,
+        description: description.trim() || undefined,
+      });
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Fehler beim Erstellen");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mb-3 rounded-lg border border-dashed border-border bg-muted/30 p-3">
+      <div className="flex flex-wrap gap-3">
+        <div>
+          <label className="text-xs text-muted-foreground">Profil-Code</label>
+          <input
+            type="text"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="z.B. komplett"
+            className="mt-1 flex h-8 w-36 rounded-md border border-input bg-background px-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            autoFocus
+          />
+        </div>
+        <div className="flex-1 min-w-[180px]">
+          <label className="text-xs text-muted-foreground">Profilname</label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="z.B. Komplett-Artikelliste"
+            className="mt-1 flex h-8 w-full rounded-md border border-input bg-background px-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">Dateityp</label>
+          <select
+            value={fileType}
+            onChange={(e) => setFileType(e.target.value)}
+            className="mt-1 flex h-8 rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <option value="csv">CSV</option>
+            <option value="xlsx">Excel (XLSX)</option>
+            <option value="xls">Excel (XLS)</option>
+          </select>
+        </div>
+        <div className="flex-1 min-w-[180px]">
+          <label className="text-xs text-muted-foreground">
+            Beschreibung (optional)
+          </label>
+          <input
+            type="text"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="z.B. Vollständige Artikelliste inkl. Preisen"
+            className="mt-1 flex h-8 w-full rounded-md border border-input bg-background px-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </div>
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          onClick={handleSubmit}
+          disabled={saving || !code.trim() || !name.trim()}
+          className="inline-flex h-8 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+        >
+          {saving && <Loader2 className="h-3 w-3 animate-spin" />}
+          Profil erstellen
+        </button>
+        <button
+          onClick={onCancel}
+          className="inline-flex h-8 items-center rounded-md border border-input bg-background px-3 text-sm hover:bg-accent"
+        >
+          Abbrechen
+        </button>
+        {error && (
+          <span className="text-sm text-destructive">{error}</span>
+        )}
+      </div>
     </div>
   );
 }

@@ -46,6 +46,7 @@ async def list_hub_fields(
             field_type=f.field_type,
             example=f.example,
             category=f.category,
+            field_class=f.field_class,
         )
         for f in HUB_FIELDS
     ]

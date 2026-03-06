@@ -43,10 +43,14 @@ class ProductBase(BaseModel):
     weight_piece_g: int | None = None
     weight_ve_g: int | None = None
     weight_palette_g: int | None = None
-    # Dimensions
-    width_mm: int | None = None
-    height_mm: int | None = None
-    length_mm: int | None = None
+    # Dimensions — Piece
+    piece_width_mm: int | None = None
+    piece_height_mm: int | None = None
+    piece_length_mm: int | None = None
+    # Dimensions — Case/VE
+    case_width_mm: int | None = None
+    case_height_mm: int | None = None
+    case_length_mm: int | None = None
     # Compliance
     is_medication: bool | None = None
     pharmacy_required: str | None = None
@@ -104,10 +108,14 @@ class ProductUpdate(BaseModel):
     weight_piece_g: int | None = None
     weight_ve_g: int | None = None
     weight_palette_g: int | None = None
-    # Dimensions
-    width_mm: int | None = None
-    height_mm: int | None = None
-    length_mm: int | None = None
+    # Dimensions — Piece
+    piece_width_mm: int | None = None
+    piece_height_mm: int | None = None
+    piece_length_mm: int | None = None
+    # Dimensions — Case/VE
+    case_width_mm: int | None = None
+    case_height_mm: int | None = None
+    case_length_mm: int | None = None
     # Compliance
     is_medication: bool | None = None
     pharmacy_required: str | None = None

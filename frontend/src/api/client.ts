@@ -95,10 +95,14 @@ export interface Product {
   weight_piece_g: number | null;
   weight_ve_g: number | null;
   weight_palette_g: number | null;
-  // Dimensions
-  width_mm: number | null;
-  height_mm: number | null;
-  length_mm: number | null;
+  // Dimensions — Piece
+  piece_width_mm: number | null;
+  piece_height_mm: number | null;
+  piece_length_mm: number | null;
+  // Dimensions — Case/VE
+  case_width_mm: number | null;
+  case_height_mm: number | null;
+  case_length_mm: number | null;
   // Compliance
   is_medication: boolean | null;
   pharmacy_required: string | null;
@@ -345,6 +349,27 @@ export interface HubFieldInfo {
   field_type: string;
   example: string;
   category: string;
+  field_class: string;
+}
+
+// Import Profile types
+export interface ImportProfile {
+  id: number;
+  supplier_id: number;
+  profile_code: string;
+  profile_name: string;
+  file_type: string;
+  description: string | null;
+  is_active: boolean;
+  mapping_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ImportProfileMapping {
+  id: number;
+  csv_column: string;
+  hub_field: string;
 }
 
 export interface ColumnMapping {
@@ -525,6 +550,45 @@ export const api = {
     fd.append("file", file);
     return fetchAPIFormData<AutoDetectResult[]>(
       `/api/suppliers/${supplierId}/column-mappings/auto-detect-file`,
+      fd
+    );
+  },
+
+  // Import Profiles
+  getImportProfiles: (supplierId: number) =>
+    fetchAPI<ImportProfile[]>(`/api/suppliers/${supplierId}/import-profiles`),
+
+  createImportProfile: (supplierId: number, data: { profile_code: string; profile_name: string; file_type?: string; description?: string }) =>
+    fetchAPI<ImportProfile>(`/api/suppliers/${supplierId}/import-profiles`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateImportProfile: (supplierId: number, profileId: number, data: Partial<ImportProfile>) =>
+    fetchAPI<ImportProfile>(`/api/suppliers/${supplierId}/import-profiles/${profileId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  deleteImportProfile: (supplierId: number, profileId: number) =>
+    fetchAPI<void>(`/api/suppliers/${supplierId}/import-profiles/${profileId}`, {
+      method: "DELETE",
+    }).catch(() => {}),
+
+  getProfileMappings: (supplierId: number, profileId: number) =>
+    fetchAPI<ImportProfileMapping[]>(`/api/suppliers/${supplierId}/import-profiles/${profileId}/mappings`),
+
+  saveProfileMappings: (supplierId: number, profileId: number, mappings: { csv_column: string; hub_field: string }[]) =>
+    fetchAPI<ImportProfileMapping[]>(`/api/suppliers/${supplierId}/import-profiles/${profileId}/mappings`, {
+      method: "PUT",
+      body: JSON.stringify({ mappings }),
+    }),
+
+  autoDetectProfileFromFile: (supplierId: number, profileId: number, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return fetchAPIFormData<AutoDetectResult[]>(
+      `/api/suppliers/${supplierId}/import-profiles/${profileId}/auto-detect-file`,
       fd
     );
   },

@@ -387,14 +387,23 @@ async def _create_skeleton_product(
         size_value=_safe_float(row.get("verpackungsinhalt")),
         size_unit=row.get("verpackungseinheit") or None,
         units_per_ve=_safe_int(row.get("einheit")),
-        width_mm=_convert_dimension_to_mm(
+        piece_width_mm=_convert_dimension_to_mm(
             row.get("stueck_breite"), row.get("stueck_breite_einheit")
         ),
-        height_mm=_convert_dimension_to_mm(
+        piece_height_mm=_convert_dimension_to_mm(
             row.get("stueck_hoehe"), row.get("stueck_hoehe_einheit")
         ),
-        length_mm=_convert_dimension_to_mm(
+        piece_length_mm=_convert_dimension_to_mm(
             row.get("stueck_tiefe"), row.get("stueck_tiefe_einheit")
+        ),
+        case_width_mm=_convert_dimension_to_mm(
+            row.get("ve_breite"), row.get("ve_breite_einheit")
+        ),
+        case_height_mm=_convert_dimension_to_mm(
+            row.get("ve_hoehe"), row.get("ve_hoehe_einheit")
+        ),
+        case_length_mm=_convert_dimension_to_mm(
+            row.get("ve_tiefe"), row.get("ve_tiefe_einheit")
         ),
         weight_piece_g=_convert_weight_to_g(
             row.get("stueck_gewicht"), row.get("stueck_gewicht_einheit")
@@ -755,14 +764,23 @@ def _enrich_product(product: Product, row: dict[str, str]):
     _set_if_empty("size_value", _safe_float(row.get("verpackungsinhalt")))
     _set_if_empty("size_unit", row.get("verpackungseinheit") or None)
     _set_if_empty("units_per_ve", _safe_int(row.get("einheit")))
-    _set_if_empty("width_mm", _convert_dimension_to_mm(
+    _set_if_empty("piece_width_mm", _convert_dimension_to_mm(
         row.get("stueck_breite"), row.get("stueck_breite_einheit")
     ))
-    _set_if_empty("height_mm", _convert_dimension_to_mm(
+    _set_if_empty("piece_height_mm", _convert_dimension_to_mm(
         row.get("stueck_hoehe"), row.get("stueck_hoehe_einheit")
     ))
-    _set_if_empty("length_mm", _convert_dimension_to_mm(
+    _set_if_empty("piece_length_mm", _convert_dimension_to_mm(
         row.get("stueck_tiefe"), row.get("stueck_tiefe_einheit")
+    ))
+    _set_if_empty("case_width_mm", _convert_dimension_to_mm(
+        row.get("ve_breite"), row.get("ve_breite_einheit")
+    ))
+    _set_if_empty("case_height_mm", _convert_dimension_to_mm(
+        row.get("ve_hoehe"), row.get("ve_hoehe_einheit")
+    ))
+    _set_if_empty("case_length_mm", _convert_dimension_to_mm(
+        row.get("ve_tiefe"), row.get("ve_tiefe_einheit")
     ))
     _set_if_empty("weight_piece_g", _convert_weight_to_g(
         row.get("stueck_gewicht"), row.get("stueck_gewicht_einheit")

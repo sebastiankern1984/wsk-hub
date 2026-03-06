@@ -69,10 +69,14 @@ def _product_to_response(product: Product) -> ProductResponse:
         weight_piece_g=product.weight_piece_g,
         weight_ve_g=product.weight_ve_g,
         weight_palette_g=product.weight_palette_g,
-        # Dimensions
-        width_mm=product.width_mm,
-        height_mm=product.height_mm,
-        length_mm=product.length_mm,
+        # Dimensions — Piece
+        piece_width_mm=product.piece_width_mm,
+        piece_height_mm=product.piece_height_mm,
+        piece_length_mm=product.piece_length_mm,
+        # Dimensions — Case/VE
+        case_width_mm=product.case_width_mm,
+        case_height_mm=product.case_height_mm,
+        case_length_mm=product.case_length_mm,
         # Compliance
         is_medication=product.is_medication,
         pharmacy_required=product.pharmacy_required,
