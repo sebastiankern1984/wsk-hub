@@ -110,6 +110,14 @@ async def create_profile(
     )
     db.add(profile)
     await db.flush()
+
+    # Re-fetch with eagerly loaded mappings to avoid MissingGreenlet
+    result2 = await db.execute(
+        select(ImportProfile)
+        .options(selectinload(ImportProfile.mappings))
+        .where(ImportProfile.id == profile.id)
+    )
+    profile = result2.unique().scalar_one()
     return _profile_to_response(profile)
 
 
