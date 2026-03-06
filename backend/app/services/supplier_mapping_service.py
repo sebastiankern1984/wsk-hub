@@ -4,10 +4,13 @@ Handles per-supplier CSV/Excel column → Hub field mappings.
 """
 from __future__ import annotations
 
+import csv
+import io
 import logging
 import re
 from typing import Optional
 
+from openpyxl import load_workbook
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -88,6 +91,69 @@ async def get_column_map(
     if mappings:
         return {m.csv_column: m.hub_field for m in mappings}
     return dict(STANDARD_COLUMN_MAP)
+
+
+def extract_headers_from_file(file_content: bytes, filename: str) -> list[str]:
+    """Extract column headers from a CSV or Excel file.
+
+    Handles our template format (category row + header row + type hints)
+    by detecting type-hint rows and using the correct header row.
+    """
+    ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
+
+    if ext in ("xlsx", "xls"):
+        return _extract_excel_headers(file_content)
+    else:
+        return _extract_csv_headers(file_content)
+
+
+def _extract_csv_headers(file_content: bytes) -> list[str]:
+    """Extract headers from first line of a semicolon-delimited CSV."""
+    for enc in ("utf-8-sig", "utf-8", "latin-1", "cp1252"):
+        try:
+            text = file_content.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        text = file_content.decode("latin-1", errors="replace")
+
+    first_line = text.split("\n")[0].strip()
+    if not first_line:
+        return []
+
+    headers = [h.strip().strip('"') for h in first_line.split(";")]
+    return [h for h in headers if h]
+
+
+def _extract_excel_headers(file_content: bytes) -> list[str]:
+    """Extract headers from an Excel file, detecting template format."""
+    wb = load_workbook(io.BytesIO(file_content), read_only=True, data_only=True)
+    ws = wb.active
+
+    all_rows = list(ws.iter_rows(values_only=True))
+    wb.close()
+
+    if not all_rows:
+        return []
+
+    # Detect our template format: row 3 (index 2) contains type hints
+    TYPE_HINTS = {
+        "text", "preis (z.b. 12,50)", "ganzzahl", "dezimalzahl",
+        "datum (tt.mm.jjjj)", "ja/nein", "maß (zahl)", "gewicht (zahl)",
+    }
+
+    header_row_idx = 0  # default: first row is header
+
+    if len(all_rows) >= 3:
+        row3_values = [str(v).strip().lower() for v in all_rows[2] if v]
+        if row3_values and all(v in TYPE_HINTS for v in row3_values):
+            # Template format: row 1 = category, row 2 = headers
+            header_row_idx = 1
+
+    raw_headers = all_rows[header_row_idx]
+    headers = [str(h).strip() for h in raw_headers if h]
+    return [h for h in headers if h]
 
 
 def _normalize(s: str) -> str:

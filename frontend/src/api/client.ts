@@ -519,6 +519,15 @@ export const api = {
       body: JSON.stringify({ headers }),
     }),
 
+  autoDetectMappingsFromFile: (supplierId: number, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return fetchAPIFormData<AutoDetectResult[]>(
+      `/api/suppliers/${supplierId}/column-mappings/auto-detect-file`,
+      fd
+    );
+  },
+
   // Manufacturers
   getManufacturers: () => fetchAPI<Manufacturer[]>("/api/manufacturers"),
 };

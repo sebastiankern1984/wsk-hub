@@ -414,35 +414,8 @@ function MappingTab({
   const handleAutoDetect = async (file: File) => {
     setDetecting(true);
     try {
-      // Read headers from file
-      const text = await file.text();
-      let headers: string[] = [];
-
-      const ext = file.name.toLowerCase().split(".").pop();
-      if (ext === "csv") {
-        // CSV: first line = headers (semicolon separated)
-        const firstLine = text.split("\n")[0] || "";
-        headers = firstLine
-          .split(";")
-          .map((h) => h.trim().replace(/^"|"$/g, ""));
-      } else {
-        // For Excel we send the file to backend to parse headers
-        // Simplified: just read first line as text (user should use CSV for auto-detect)
-        const firstLine = text.split("\n")[0] || "";
-        headers = firstLine
-          .split(/[;\t,]/)
-          .map((h) => h.trim().replace(/^"|"$/g, ""));
-      }
-
-      headers = headers.filter((h) => h.length > 0);
-
-      if (headers.length === 0) {
-        alert("Keine Spaltenüberschriften gefunden");
-        return;
-      }
-
-      const results = await api.autoDetectMappings(supplierId, headers);
-      // Apply detected mappings
+      // Send file to backend for header extraction + auto-detection
+      const results = await api.autoDetectMappingsFromFile(supplierId, file);
       setMappings(
         results.map((r) => ({
           csv_column: r.csv_column,
@@ -451,6 +424,7 @@ function MappingTab({
       );
     } catch (e) {
       console.error(e);
+      alert("Auto-Erkennung fehlgeschlagen. Bitte CSV oder Excel-Datei hochladen.");
     } finally {
       setDetecting(false);
     }

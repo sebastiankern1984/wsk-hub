@@ -23,6 +23,7 @@ from app.schemas.column_mapping import (
 from app.services.hub_field_registry import HUB_FIELDS
 from app.services.supplier_mapping_service import (
     auto_detect_mappings,
+    extract_headers_from_file,
     get_mappings,
     save_mappings,
 )
@@ -117,6 +118,45 @@ async def auto_detect_supplier_mappings(
         raise HTTPException(404, "Lieferant nicht gefunden")
 
     results = auto_detect_mappings(body.headers)
+    return [
+        AutoDetectResult(
+            csv_column=r["csv_column"],
+            hub_field=r["hub_field"],
+            confidence=r["confidence"],
+        )
+        for r in results
+    ]
+
+
+@router.post(
+    "/suppliers/{supplier_id}/column-mappings/auto-detect-file",
+    response_model=list[AutoDetectResult],
+)
+async def auto_detect_from_file(
+    supplier_id: int,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    """Auto-detect mappings by uploading a CSV/Excel file.
+
+    Extracts headers from the file and runs auto-detection.
+    Handles Excel binary files that can't be parsed in the browser.
+    """
+    supplier = await db.get(Supplier, supplier_id)
+    if not supplier:
+        raise HTTPException(404, "Lieferant nicht gefunden")
+
+    if not file.filename:
+        raise HTTPException(400, "Dateiname fehlt")
+
+    content = await file.read()
+    headers = extract_headers_from_file(content, file.filename)
+
+    if not headers:
+        raise HTTPException(400, "Keine Spaltenüberschriften in der Datei gefunden")
+
+    results = auto_detect_mappings(headers)
     return [
         AutoDetectResult(
             csv_column=r["csv_column"],
