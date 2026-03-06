@@ -86,7 +86,61 @@ export default function ProductDetail() {
         </div>
       </div>
 
-      {/* Row 1: Identifikation + Bezeichnungen */}
+      {/* Row 1: Lieferanten */}
+      <div className="rounded-xl border border-border bg-card">
+        <div className="border-b border-border px-6 py-4">
+          <h2 className="flex items-center gap-2 text-lg font-semibold">
+            <Truck className="h-5 w-5" />
+            Lieferanten ({product.suppliers.length})
+          </h2>
+        </div>
+        {product.suppliers.length === 0 ? (
+          <div className="px-6 py-8 text-center text-sm text-muted-foreground">
+            Keine Lieferanten zugeordnet
+          </div>
+        ) : (
+          <div className="divide-y divide-border">
+            {product.suppliers.map((sp) => (
+              <div key={sp.id} className="flex items-center justify-between px-6 py-3">
+                <div>
+                  <span className="text-sm font-medium">
+                    {sp.supplier_name || `Lieferant #${sp.supplier_id}`}
+                  </span>
+                  {sp.supplier_sku && (
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      SKU: {sp.supplier_sku}
+                    </span>
+                  )}
+                </div>
+                <div className="text-right text-sm">
+                  {sp.abda_ek != null && (
+                    <span className="text-muted-foreground">
+                      ABDA EK: {sp.abda_ek.toFixed(2)}
+                    </span>
+                  )}
+                  {sp.purchase_price != null && (
+                    <span className="ml-3 text-muted-foreground">
+                      EK: {sp.purchase_price.toFixed(2)}
+                    </span>
+                  )}
+                  {sp.retail_price != null && (
+                    <span className="ml-3 text-muted-foreground">
+                      VK: {sp.retail_price.toFixed(2)}
+                    </span>
+                  )}
+                  {sp.discount_source && (
+                    <span className="ml-2 text-xs text-muted-foreground/60">
+                      ({sp.discount_source.replace("_", " ")})
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Row 2: Identifikation + Bezeichnungen */}
       <div className="grid gap-6 lg:grid-cols-2">
         <Section title="Identifikation" icon={Fingerprint}>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
@@ -359,60 +413,6 @@ export default function ProductDetail() {
                 ))}
               </tbody>
             </table>
-          </div>
-        )}
-      </div>
-
-      {/* Lieferanten */}
-      <div className="rounded-xl border border-border bg-card">
-        <div className="border-b border-border px-6 py-4">
-          <h2 className="flex items-center gap-2 text-lg font-semibold">
-            <Truck className="h-5 w-5" />
-            Lieferanten ({product.suppliers.length})
-          </h2>
-        </div>
-        {product.suppliers.length === 0 ? (
-          <div className="px-6 py-8 text-center text-sm text-muted-foreground">
-            Keine Lieferanten zugeordnet
-          </div>
-        ) : (
-          <div className="divide-y divide-border">
-            {product.suppliers.map((sp) => (
-              <div key={sp.id} className="flex items-center justify-between px-6 py-3">
-                <div>
-                  <span className="text-sm font-medium">
-                    {sp.supplier_name || `Lieferant #${sp.supplier_id}`}
-                  </span>
-                  {sp.supplier_sku && (
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      SKU: {sp.supplier_sku}
-                    </span>
-                  )}
-                </div>
-                <div className="text-right text-sm">
-                  {sp.abda_ek != null && (
-                    <span className="text-muted-foreground">
-                      ABDA EK: {sp.abda_ek.toFixed(2)}
-                    </span>
-                  )}
-                  {sp.purchase_price != null && (
-                    <span className="ml-3 text-muted-foreground">
-                      EK: {sp.purchase_price.toFixed(2)}
-                    </span>
-                  )}
-                  {sp.retail_price != null && (
-                    <span className="ml-3 text-muted-foreground">
-                      VK: {sp.retail_price.toFixed(2)}
-                    </span>
-                  )}
-                  {sp.discount_source && (
-                    <span className="ml-2 text-xs text-muted-foreground/60">
-                      ({sp.discount_source.replace("_", " ")})
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
           </div>
         )}
       </div>
