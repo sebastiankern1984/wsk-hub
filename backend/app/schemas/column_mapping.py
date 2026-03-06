@@ -34,3 +34,4 @@ class AutoDetectResult(BaseModel):
     csv_column: str
     hub_field: str | None
     confidence: str  # "exact", "normalized", "fuzzy", "none"
+    example_value: str | None = None

@@ -343,6 +343,7 @@ function MappingTab({
   const [mappings, setMappings] = useState<
     { csv_column: string; hub_field: string }[]
   >([]);
+  const [exampleValues, setExampleValues] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -422,6 +423,12 @@ function MappingTab({
           hub_field: r.hub_field || "",
         }))
       );
+      // Store example values keyed by csv_column
+      const examples: Record<string, string> = {};
+      for (const r of results) {
+        if (r.example_value) examples[r.csv_column] = r.example_value;
+      }
+      setExampleValues(examples);
     } catch (e) {
       console.error(e);
       alert("Auto-Erkennung fehlgeschlagen. Bitte CSV oder Excel-Datei hochladen.");
@@ -555,6 +562,11 @@ function MappingTab({
               <th className="px-4 py-3 text-left font-medium text-muted-foreground">
                 CSV/Excel-Spalte
               </th>
+              {Object.keys(exampleValues).length > 0 && (
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                  Beispielwert
+                </th>
+              )}
               <th className="px-4 py-3 text-left font-medium text-muted-foreground">
                 → Hub-Feld
               </th>
@@ -570,7 +582,7 @@ function MappingTab({
             {mappings.length === 0 ? (
               <tr>
                 <td
-                  colSpan={canEdit ? 4 : 3}
+                  colSpan={canEdit ? 5 : 4}
                   className="px-4 py-8 text-center text-muted-foreground"
                 >
                   Kein Mapping konfiguriert. Nutze „Auto-Erkennung" oder füge
@@ -604,6 +616,11 @@ function MappingTab({
                         </span>
                       )}
                     </td>
+                    {Object.keys(exampleValues).length > 0 && (
+                      <td className="px-4 py-2 text-xs text-muted-foreground font-mono max-w-[200px] truncate" title={exampleValues[m.csv_column] || ""}>
+                        {exampleValues[m.csv_column] || "–"}
+                      </td>
+                    )}
                     <td className="px-4 py-2">
                       {canEdit ? (
                         <select

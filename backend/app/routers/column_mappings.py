@@ -151,10 +151,13 @@ async def auto_detect_from_file(
         raise HTTPException(400, "Dateiname fehlt")
 
     content = await file.read()
-    headers = extract_headers_from_file(content, file.filename)
+    headers, first_row = extract_headers_from_file(content, file.filename)
 
     if not headers:
         raise HTTPException(400, "Keine Spaltenüberschriften in der Datei gefunden")
+
+    # Build example value map: header → first row value
+    example_map = {h: first_row[i] if i < len(first_row) else None for i, h in enumerate(headers)}
 
     results = auto_detect_mappings(headers)
     return [
@@ -162,6 +165,7 @@ async def auto_detect_from_file(
             csv_column=r["csv_column"],
             hub_field=r["hub_field"],
             confidence=r["confidence"],
+            example_value=example_map.get(r["csv_column"]),
         )
         for r in results
     ]

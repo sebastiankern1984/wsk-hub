@@ -357,6 +357,7 @@ export interface AutoDetectResult {
   csv_column: string;
   hub_field: string | null;
   confidence: string;
+  example_value: string | null;
 }
 
 // API functions

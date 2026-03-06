@@ -93,11 +93,16 @@ async def get_column_map(
     return dict(STANDARD_COLUMN_MAP)
 
 
-def extract_headers_from_file(file_content: bytes, filename: str) -> list[str]:
-    """Extract column headers from a CSV or Excel file.
+def extract_headers_from_file(
+    file_content: bytes, filename: str
+) -> tuple[list[str], list[str]]:
+    """Extract column headers and first data row from a CSV or Excel file.
 
     Handles our template format (category row + header row + type hints)
     by detecting type-hint rows and using the correct header row.
+
+    Returns:
+        (headers, first_row) — first_row values aligned with headers.
     """
     ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
 
@@ -107,8 +112,8 @@ def extract_headers_from_file(file_content: bytes, filename: str) -> list[str]:
         return _extract_csv_headers(file_content)
 
 
-def _extract_csv_headers(file_content: bytes) -> list[str]:
-    """Extract headers from first line of a semicolon-delimited CSV."""
+def _extract_csv_headers(file_content: bytes) -> tuple[list[str], list[str]]:
+    """Extract headers and first data row from a semicolon-delimited CSV."""
     for enc in ("utf-8-sig", "utf-8", "latin-1", "cp1252"):
         try:
             text = file_content.decode(enc)
@@ -118,16 +123,23 @@ def _extract_csv_headers(file_content: bytes) -> list[str]:
     else:
         text = file_content.decode("latin-1", errors="replace")
 
-    first_line = text.split("\n")[0].strip()
-    if not first_line:
-        return []
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    if not lines:
+        return [], []
 
-    headers = [h.strip().strip('"') for h in first_line.split(";")]
-    return [h for h in headers if h]
+    headers = [h.strip().strip('"') for h in lines[0].split(";")]
+    headers = [h for h in headers if h]
+
+    first_row: list[str] = []
+    if len(lines) > 1:
+        raw = [v.strip().strip('"') for v in lines[1].split(";")]
+        first_row = raw[: len(headers)]
+
+    return headers, first_row
 
 
-def _extract_excel_headers(file_content: bytes) -> list[str]:
-    """Extract headers from an Excel file, detecting template format."""
+def _extract_excel_headers(file_content: bytes) -> tuple[list[str], list[str]]:
+    """Extract headers and first data row from an Excel file, detecting template format."""
     wb = load_workbook(io.BytesIO(file_content), read_only=True, data_only=True)
     ws = wb.active
 
@@ -135,7 +147,7 @@ def _extract_excel_headers(file_content: bytes) -> list[str]:
     wb.close()
 
     if not all_rows:
-        return []
+        return [], []
 
     # Detect our template format: row 3 (index 2) contains type hints
     TYPE_HINTS = {
@@ -144,16 +156,26 @@ def _extract_excel_headers(file_content: bytes) -> list[str]:
     }
 
     header_row_idx = 0  # default: first row is header
+    data_row_idx = 1    # default: second row is first data
 
     if len(all_rows) >= 3:
         row3_values = [str(v).strip().lower() for v in all_rows[2] if v]
         if row3_values and all(v in TYPE_HINTS for v in row3_values):
-            # Template format: row 1 = category, row 2 = headers
+            # Template format: row 1 = category, row 2 = headers, row 3 = type hints
             header_row_idx = 1
+            data_row_idx = 3  # first data row after type hints
 
     raw_headers = all_rows[header_row_idx]
     headers = [str(h).strip() for h in raw_headers if h]
-    return [h for h in headers if h]
+    headers = [h for h in headers if h]
+
+    first_row: list[str] = []
+    if len(all_rows) > data_row_idx:
+        raw = all_rows[data_row_idx]
+        first_row = [str(v).strip() if v is not None else "" for v in raw]
+        first_row = first_row[: len(headers)]
+
+    return headers, first_row
 
 
 def _normalize(s: str) -> str:
