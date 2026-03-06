@@ -338,6 +338,27 @@ export interface Manufacturer {
   created_at: string;
 }
 
+// Column Mapping types
+export interface HubFieldInfo {
+  key: string;
+  label: string;
+  field_type: string;
+  example: string;
+  category: string;
+}
+
+export interface ColumnMapping {
+  id: number;
+  csv_column: string;
+  hub_field: string;
+}
+
+export interface AutoDetectResult {
+  csv_column: string;
+  hub_field: string | null;
+  confidence: string;
+}
+
 // API functions
 export const api = {
   // Auth
@@ -419,6 +440,13 @@ export const api = {
   getAbdaStats: () => fetchAPI<AbdaStats>("/api/abda/stats"),
 
   // Supplier Import
+  uploadSupplierFile: (file: File, supplierId?: number) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const params = supplierId ? `?supplier_id=${supplierId}` : "";
+    return fetchAPIFormData<SupplierImportLog>(`/api/imports/supplier${params}`, fd);
+  },
+  // Legacy alias
   uploadSupplierCsv: (file: File) => {
     const fd = new FormData();
     fd.append("file", file);
@@ -471,6 +499,24 @@ export const api = {
     fetchAPI<AppSetting>(`/api/settings/${key}`, {
       method: "PUT",
       body: JSON.stringify({ value }),
+    }),
+
+  // Column Mappings
+  getHubFields: () => fetchAPI<HubFieldInfo[]>("/api/hub-fields"),
+
+  getColumnMappings: (supplierId: number) =>
+    fetchAPI<ColumnMapping[]>(`/api/suppliers/${supplierId}/column-mappings`),
+
+  saveColumnMappings: (supplierId: number, mappings: { csv_column: string; hub_field: string }[]) =>
+    fetchAPI<ColumnMapping[]>(`/api/suppliers/${supplierId}/column-mappings`, {
+      method: "PUT",
+      body: JSON.stringify({ mappings }),
+    }),
+
+  autoDetectMappings: (supplierId: number, headers: string[]) =>
+    fetchAPI<AutoDetectResult[]>(`/api/suppliers/${supplierId}/column-mappings/auto-detect`, {
+      method: "POST",
+      body: JSON.stringify({ headers }),
     }),
 
   // Manufacturers

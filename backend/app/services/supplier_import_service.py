@@ -1,8 +1,11 @@
-"""Supplier CSV import service.
+"""Supplier CSV/Excel import service.
 
-Parses semicolon-delimited CSV files from suppliers (e.g. FürSie),
+Parses semicolon-delimited CSV or Excel files from suppliers,
 matches rows to existing products or creates new ones, and links
 supplier_products entries.
+
+Supports dynamic column mappings per supplier (from DB) or falls
+back to standard Hub field labels / legacy FürSie format.
 
 3-case matching logic:
   1. PZN → identity_map lookup → product exists? link.
@@ -19,6 +22,7 @@ import logging
 from datetime import date, datetime
 from typing import Optional
 
+from openpyxl import load_workbook
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,6 +34,7 @@ from app.models.product_hs_code import ProductHsCode
 from app.models.supplier import Supplier
 from app.models.supplier_product import SupplierProduct
 from app.services.event_store import append_event
+from app.services.hub_field_registry import STANDARD_COLUMN_MAP
 from app.services.product_processing import (
     _get_or_create_manufacturer,
     _safe_float,
@@ -117,9 +122,9 @@ def _convert_weight_to_g(value: str | None, unit: str | None) -> int | None:
     return int(n)
 
 
-# ── CSV column name → dict key mapping ──────────────────────────
-# We normalise headers to lowercase for matching.
-COLUMN_MAP = {
+# ── FürSie-specific column name → hub field mapping (legacy) ──────
+# Kept for backwards compatibility when supplier has no DB mapping.
+FUERSIE_COLUMN_MAP = {
     "bezugsweg": "bezugsweg",
     "nan": "nan",
     "einheit": "einheit",
@@ -185,7 +190,40 @@ COLUMN_MAP = {
 }
 
 
-def _parse_csv_rows(file_content: bytes) -> list[dict[str, str]]:
+def _build_header_map(
+    fieldnames: list[str],
+    column_map: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Build header → hub_field mapping.
+
+    Priority:
+    1. Explicit column_map (supplier-specific from DB)
+    2. STANDARD_COLUMN_MAP (hub field labels)
+    3. FUERSIE_COLUMN_MAP (legacy)
+    4. Fallback: sanitized header as key
+    """
+    combined_map: dict[str, str] = {}
+    # Start with standard, then overlay supplier-specific
+    combined_map.update(STANDARD_COLUMN_MAP)
+    combined_map.update(FUERSIE_COLUMN_MAP)
+    if column_map:
+        combined_map = column_map  # Supplier DB mapping takes full precedence
+
+    header_map: dict[str, str] = {}
+    for h in fieldnames:
+        clean = h.strip().strip('"').lower()
+        if clean in combined_map:
+            header_map[h] = combined_map[clean]
+        else:
+            header_map[h] = clean.replace(" ", "_").replace("-", "_")
+
+    return header_map
+
+
+def _parse_csv_rows(
+    file_content: bytes,
+    column_map: dict[str, str] | None = None,
+) -> list[dict[str, str]]:
     """Parse semicolon-delimited CSV to list of dicts with normalised keys."""
     # Try utf-8-sig (BOM), then latin-1 fallback
     for enc in ("utf-8-sig", "utf-8", "latin-1", "cp1252"):
@@ -199,18 +237,10 @@ def _parse_csv_rows(file_content: bytes) -> list[dict[str, str]]:
 
     reader = csv.DictReader(io.StringIO(text), delimiter=";", quotechar='"')
 
-    # Build header → normalised key mapping
     if not reader.fieldnames:
         return []
 
-    header_map: dict[str, str] = {}
-    for h in reader.fieldnames:
-        clean = h.strip().strip('"').lower()
-        if clean in COLUMN_MAP:
-            header_map[h] = COLUMN_MAP[clean]
-        else:
-            # Keep original as-is for source_data
-            header_map[h] = clean.replace(" ", "_").replace("-", "_")
+    header_map = _build_header_map(list(reader.fieldnames), column_map)
 
     rows: list[dict[str, str]] = []
     for raw_row in reader:
@@ -221,6 +251,80 @@ def _parse_csv_rows(file_content: bytes) -> list[dict[str, str]]:
         rows.append(row)
 
     return rows
+
+
+def _parse_excel_rows(
+    file_content: bytes,
+    column_map: dict[str, str] | None = None,
+) -> list[dict[str, str]]:
+    """Parse Excel file (xlsx/xls) to list of dicts with normalised keys.
+
+    Reads first sheet, first row = headers, rest = data.
+    Skips rows 2-3 if they look like type hints / example rows from our template
+    (row 2 = category, row 3 = type hint like "Text", "Ganzzahl", etc.)
+    """
+    wb = load_workbook(io.BytesIO(file_content), read_only=True, data_only=True)
+    ws = wb.active
+
+    rows_iter = ws.iter_rows(values_only=True)
+
+    # Row 1 might be category row from our template, Row 2 = actual headers
+    # We need to detect if this is our template format (has category + header + type hint rows)
+    all_rows = list(rows_iter)
+    wb.close()
+
+    if not all_rows:
+        return []
+
+    # Detect template format: if row 3 contains only type hint words
+    TYPE_HINTS = {"text", "preis (z.b. 12,50)", "ganzzahl", "dezimalzahl",
+                  "datum (tt.mm.jjjj)", "ja/nein", "maß (zahl)", "gewicht (zahl)"}
+
+    header_row_idx = 0  # default: first row is header
+    data_start_idx = 1
+
+    if len(all_rows) >= 4:
+        # Check if row 3 (index 2) looks like type hints
+        row3_values = [str(v).strip().lower() for v in all_rows[2] if v]
+        if row3_values and all(v in TYPE_HINTS for v in row3_values):
+            # This is our template format: row 1 = category, row 2 = headers, row 3 = types, row 4 = example
+            header_row_idx = 1
+            data_start_idx = 4  # Skip category, header, types, example
+
+    # Extract headers
+    raw_headers = all_rows[header_row_idx]
+    fieldnames = [str(h).strip() if h else "" for h in raw_headers]
+
+    header_map = _build_header_map(fieldnames, column_map)
+
+    rows: list[dict[str, str]] = []
+    for raw_row in all_rows[data_start_idx:]:
+        if not any(raw_row):  # Skip empty rows
+            continue
+        row: dict[str, str] = {}
+        for i, value in enumerate(raw_row):
+            if i >= len(fieldnames) or not fieldnames[i]:
+                continue
+            orig_header = fieldnames[i]
+            key = header_map.get(orig_header, orig_header)
+            row[key] = str(value).strip() if value is not None else ""
+        rows.append(row)
+
+    return rows
+
+
+def _parse_file_rows(
+    file_content: bytes,
+    filename: str,
+    column_map: dict[str, str] | None = None,
+) -> list[dict[str, str]]:
+    """Parse CSV or Excel file based on extension."""
+    ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
+
+    if ext in ("xlsx", "xls"):
+        return _parse_excel_rows(file_content, column_map)
+    else:
+        return _parse_csv_rows(file_content, column_map)
 
 
 async def _find_product_by_pzn(db: AsyncSession, pzn: str) -> Product | None:
@@ -425,13 +529,19 @@ async def _get_or_create_supplier(db: AsyncSession, name: str) -> Supplier:
     return supplier
 
 
-async def import_supplier_csv(
+async def import_supplier_file(
     db: AsyncSession,
     import_log_id: int,
     file_content: bytes,
+    filename: str = "import.csv",
+    supplier_id: int | None = None,
     user_id: str | None = None,
 ):
-    """Main import entry point. Runs in background task."""
+    """Main import entry point. Runs in background task.
+
+    Supports CSV and Excel files. If supplier_id is given, loads
+    the supplier's column mapping from DB.
+    """
     log = await db.get(ImportLog, import_log_id)
     if not log:
         logger.error("ImportLog %d not found", import_log_id)
@@ -442,7 +552,22 @@ async def import_supplier_csv(
     await db.commit()
 
     try:
-        rows = _parse_csv_rows(file_content)
+        # Load supplier-specific column mapping if available
+        column_map: dict[str, str] | None = None
+        if supplier_id:
+            from app.services.supplier_mapping_service import get_column_map as _get_map
+            db_map = await _get_map(db, supplier_id)
+            # Only use if it's a real supplier mapping (not the standard fallback)
+            from app.models.supplier_column_mapping import SupplierColumnMapping
+            result = await db.execute(
+                select(SupplierColumnMapping).where(
+                    SupplierColumnMapping.supplier_id == supplier_id
+                ).limit(1)
+            )
+            if result.scalar_one_or_none():
+                column_map = db_map
+
+        rows = _parse_file_rows(file_content, filename, column_map)
         log.total_rows = len(rows)
         await db.commit()
 

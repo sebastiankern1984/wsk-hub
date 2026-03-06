@@ -13,7 +13,7 @@ from app.models.import_log import ImportLog
 from app.models.user import User
 from app.schemas.abda import AbdaImportLogResponse
 from app.services.abda_import_service import import_abda_excel
-from app.services.supplier_import_service import import_supplier_csv
+from app.services.supplier_import_service import import_supplier_file
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 
@@ -124,30 +124,49 @@ def _supplier_import_to_response(log: ImportLog) -> dict:
     }
 
 
-async def _run_supplier_import(import_log_id: int, file_content: bytes, user_id: str | None):
-    """Background task wrapper for supplier CSV import."""
+async def _run_supplier_import(
+    import_log_id: int,
+    file_content: bytes,
+    filename: str,
+    supplier_id: int | None,
+    user_id: str | None,
+):
+    """Background task wrapper for supplier CSV/Excel import."""
     from app.database import async_session
 
     async with async_session() as db:
-        await import_supplier_csv(db, import_log_id, file_content, user_id=user_id)
+        await import_supplier_file(
+            db,
+            import_log_id,
+            file_content,
+            filename=filename,
+            supplier_id=supplier_id,
+            user_id=user_id,
+        )
 
 
 @router.post("/supplier", status_code=202)
-async def upload_supplier_csv(
+async def upload_supplier_file(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    supplier_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_role("manager")),
 ):
-    """Upload a supplier CSV file for import."""
-    if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(400, "Nur CSV-Dateien erlaubt")
+    """Upload a supplier CSV or Excel file for import."""
+    if not file.filename:
+        raise HTTPException(400, "Dateiname fehlt")
+
+    ext = file.filename.lower().rsplit(".", 1)[-1] if "." in file.filename else ""
+    if ext not in ("csv", "xlsx", "xls"):
+        raise HTTPException(400, "Nur CSV- oder Excel-Dateien (.csv, .xlsx, .xls) erlaubt")
 
     content = await file.read()
 
     # Create import log
     log = ImportLog(
         filename=file.filename,
+        supplier_id=supplier_id,
         status="pending",
     )
     db.add(log)
@@ -155,7 +174,7 @@ async def upload_supplier_csv(
     await db.refresh(log)
 
     background_tasks.add_task(
-        _run_supplier_import, log.id, content, user.username
+        _run_supplier_import, log.id, content, file.filename, supplier_id, user.username
     )
 
     return _supplier_import_to_response(log)

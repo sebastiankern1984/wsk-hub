@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   api,
   type Supplier,
   type DiscountRule,
   type RecalculationResult,
+  type HubFieldInfo,
 } from "@/api/client";
 import {
   ArrowLeft,
@@ -20,10 +21,15 @@ import {
   FileSpreadsheet,
   CheckCircle2,
   X,
+  Download,
+  Columns,
+  Wand2,
+  Save,
+  Info,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
-type Tab = "overview" | "minderspannen";
+type Tab = "overview" | "mappings" | "minderspannen";
 
 export default function SupplierDetail() {
   const { id } = useParams<{ id: string }>();
@@ -95,6 +101,19 @@ export default function SupplierDetail() {
           </span>
         </button>
         <button
+          onClick={() => setTab("mappings")}
+          className={`px-4 py-2.5 text-sm font-medium transition-colors ${
+            tab === "mappings"
+              ? "border-b-2 border-primary text-primary"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <span className="flex items-center gap-2">
+            <Columns className="h-4 w-4" />
+            Import-Mapping
+          </span>
+        </button>
+        <button
           onClick={() => setTab("minderspannen")}
           className={`px-4 py-2.5 text-sm font-medium transition-colors ${
             tab === "minderspannen"
@@ -111,6 +130,8 @@ export default function SupplierDetail() {
 
       {tab === "overview" ? (
         <OverviewTab supplier={supplier} setSupplier={setSupplier} />
+      ) : tab === "mappings" ? (
+        <MappingTab supplierId={supplier.id} supplierName={supplier.name} />
       ) : (
         <MinderspannenTab supplierId={supplier.id} />
       )}
@@ -294,6 +315,379 @@ function OverviewTab({
             )}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Mapping Tab ── */
+const CATEGORY_LABELS: Record<string, string> = {
+  identifikation: "Identifikation",
+  artikeldaten: "Artikeldaten",
+  preis: "Preise",
+  masse: "Maße & Gewicht",
+  logistik: "Logistik",
+  sonstiges: "Sonstiges",
+};
+
+function MappingTab({
+  supplierId,
+  supplierName,
+}: {
+  supplierId: number;
+  supplierName: string;
+}) {
+  const { user } = useAuth();
+  const canEdit = user?.role === "admin" || user?.role === "manager";
+  const [hubFields, setHubFields] = useState<HubFieldInfo[]>([]);
+  const [mappings, setMappings] = useState<
+    { csv_column: string; hub_field: string }[]
+  >([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [detecting, setDetecting] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // Group hub fields by category for grouped dropdown
+  const fieldsByCategory = hubFields.reduce<Record<string, HubFieldInfo[]>>(
+    (acc, f) => {
+      (acc[f.category] = acc[f.category] || []).push(f);
+      return acc;
+    },
+    {}
+  );
+
+  useEffect(() => {
+    Promise.all([
+      api.getHubFields(),
+      api.getColumnMappings(supplierId),
+    ])
+      .then(([fields, existing]) => {
+        setHubFields(fields);
+        setMappings(
+          existing.map((m) => ({
+            csv_column: m.csv_column,
+            hub_field: m.hub_field,
+          }))
+        );
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [supplierId]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaved(false);
+    try {
+      const result = await api.saveColumnMappings(supplierId, mappings);
+      setMappings(
+        result.map((m) => ({ csv_column: m.csv_column, hub_field: m.hub_field }))
+      );
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAddRow = () => {
+    setMappings([...mappings, { csv_column: "", hub_field: "" }]);
+  };
+
+  const handleRemoveRow = (idx: number) => {
+    setMappings(mappings.filter((_, i) => i !== idx));
+  };
+
+  const handleChange = (
+    idx: number,
+    field: "csv_column" | "hub_field",
+    value: string
+  ) => {
+    setMappings(
+      mappings.map((m, i) => (i === idx ? { ...m, [field]: value } : m))
+    );
+  };
+
+  const handleAutoDetect = async (file: File) => {
+    setDetecting(true);
+    try {
+      // Read headers from file
+      const text = await file.text();
+      let headers: string[] = [];
+
+      const ext = file.name.toLowerCase().split(".").pop();
+      if (ext === "csv") {
+        // CSV: first line = headers (semicolon separated)
+        const firstLine = text.split("\n")[0] || "";
+        headers = firstLine
+          .split(";")
+          .map((h) => h.trim().replace(/^"|"$/g, ""));
+      } else {
+        // For Excel we send the file to backend to parse headers
+        // Simplified: just read first line as text (user should use CSV for auto-detect)
+        const firstLine = text.split("\n")[0] || "";
+        headers = firstLine
+          .split(/[;\t,]/)
+          .map((h) => h.trim().replace(/^"|"$/g, ""));
+      }
+
+      headers = headers.filter((h) => h.length > 0);
+
+      if (headers.length === 0) {
+        alert("Keine Spaltenüberschriften gefunden");
+        return;
+      }
+
+      const results = await api.autoDetectMappings(supplierId, headers);
+      // Apply detected mappings
+      setMappings(
+        results.map((r) => ({
+          csv_column: r.csv_column,
+          hub_field: r.hub_field || "",
+        }))
+      );
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setDetecting(false);
+    }
+  };
+
+  const handleDownloadTemplate = (format: "csv" | "xlsx") => {
+    const token = localStorage.getItem("token");
+    const url = mappings.length > 0
+      ? `/api/suppliers/${supplierId}/import-template?format=${format}`
+      : `/api/imports/supplier/template?format=${format}`;
+    // Trigger download via fetch
+    fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((r) => r.blob())
+      .then((blob) => {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `vorlage-${supplierName.toLowerCase().replace(/\s+/g, "-")}.${format}`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      });
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12 text-muted-foreground">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        Laden...
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-3">
+        {canEdit && (
+          <>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {saving ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Save className="h-3.5 w-3.5" />
+              )}
+              Speichern
+            </button>
+            {saved && (
+              <span className="inline-flex items-center gap-1 text-sm text-emerald-500">
+                <CheckCircle2 className="h-4 w-4" />
+                Gespeichert
+              </span>
+            )}
+            <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent">
+              {detecting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Wand2 className="h-3.5 w-3.5" />
+              )}
+              Auto-Erkennung
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleAutoDetect(f);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            <button
+              onClick={handleAddRow}
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Zeile hinzufügen
+            </button>
+          </>
+        )}
+        <div className="ml-auto flex gap-2">
+          <button
+            onClick={() => handleDownloadTemplate("csv")}
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent"
+          >
+            <Download className="h-3.5 w-3.5" />
+            CSV-Vorlage
+          </button>
+          <button
+            onClick={() => handleDownloadTemplate("xlsx")}
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Excel-Vorlage
+          </button>
+        </div>
+      </div>
+
+      {/* Info box */}
+      <div className="rounded-lg border border-border bg-card p-4">
+        <div className="flex items-start gap-2">
+          <Info className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground" />
+          <div className="text-sm text-muted-foreground">
+            <p>
+              Ordne die CSV/Excel-Spalten deiner Import-Datei den Hub-Feldern
+              zu. Bei <strong>Auto-Erkennung</strong> wird eine Datei
+              hochgeladen und die Spalten automatisch erkannt.
+            </p>
+            <p className="mt-1">
+              Ohne Mapping wird beim Import das{" "}
+              <strong>Standard-Format</strong> (Hub-Feld-Labels als
+              Spaltennamen) verwendet.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Mapping table */}
+      <div className="rounded-xl border border-border bg-card">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border">
+              <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                CSV/Excel-Spalte
+              </th>
+              <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                → Hub-Feld
+              </th>
+              <th className="px-4 py-3 text-left font-medium text-muted-foreground w-32">
+                Typ
+              </th>
+              {canEdit && (
+                <th className="px-4 py-3 w-16" />
+              )}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {mappings.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={canEdit ? 4 : 3}
+                  className="px-4 py-8 text-center text-muted-foreground"
+                >
+                  Kein Mapping konfiguriert. Nutze „Auto-Erkennung" oder füge
+                  Zeilen manuell hinzu.
+                </td>
+              </tr>
+            ) : (
+              mappings.map((m, idx) => {
+                const matchedField = hubFields.find(
+                  (f) => f.key === m.hub_field
+                );
+                return (
+                  <tr
+                    key={idx}
+                    className="transition-colors hover:bg-muted/50"
+                  >
+                    <td className="px-4 py-2">
+                      {canEdit ? (
+                        <input
+                          type="text"
+                          value={m.csv_column}
+                          onChange={(e) =>
+                            handleChange(idx, "csv_column", e.target.value)
+                          }
+                          placeholder="Spaltenname aus Datei"
+                          className="flex h-8 w-full rounded-md border border-input bg-background px-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        />
+                      ) : (
+                        <span className="font-mono text-xs">
+                          {m.csv_column}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2">
+                      {canEdit ? (
+                        <select
+                          value={m.hub_field}
+                          onChange={(e) =>
+                            handleChange(idx, "hub_field", e.target.value)
+                          }
+                          className="flex h-8 w-full rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <option value="">– Nicht zugeordnet –</option>
+                          {Object.entries(fieldsByCategory).map(
+                            ([cat, fields]) => (
+                              <optgroup
+                                key={cat}
+                                label={CATEGORY_LABELS[cat] || cat}
+                              >
+                                {fields.map((f) => (
+                                  <option key={f.key} value={f.key}>
+                                    {f.label} ({f.key})
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )
+                          )}
+                        </select>
+                      ) : (
+                        <span>
+                          {matchedField
+                            ? `${matchedField.label} (${matchedField.key})`
+                            : m.hub_field}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-xs text-muted-foreground">
+                      {matchedField?.field_type || "–"}
+                    </td>
+                    {canEdit && (
+                      <td className="px-4 py-2 text-center">
+                        <button
+                          onClick={() => handleRemoveRow(idx)}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded hover:bg-destructive/10"
+                        >
+                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+      {mappings.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {mappings.filter((m) => m.hub_field).length} von {mappings.length}{" "}
+          Spalten zugeordnet
+        </p>
       )}
     </div>
   );

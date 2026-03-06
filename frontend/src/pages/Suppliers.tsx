@@ -11,6 +11,7 @@ import {
   XCircle,
   Clock,
   AlertTriangle,
+  Download,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -48,7 +49,7 @@ export default function Suppliers() {
         >
           <span className="flex items-center gap-2">
             <Upload className="h-4 w-4" />
-            CSV Import
+            Import
           </span>
         </button>
       </div>
@@ -244,13 +245,28 @@ function ImportTab() {
     setError(null);
     setUploading(true);
     try {
-      await api.uploadSupplierCsv(file);
+      await api.uploadSupplierFile(file);
       loadImports();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload fehlgeschlagen");
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleDownloadTemplate = (format: "csv" | "xlsx") => {
+    const token = localStorage.getItem("token");
+    fetch(`/api/imports/supplier/template?format=${format}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((r) => r.blob())
+      .then((blob) => {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `import-vorlage.${format}`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      });
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -280,7 +296,7 @@ function ImportTab() {
           <div className="flex flex-col items-center gap-2">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
             <p className="text-sm text-muted-foreground">
-              CSV wird hochgeladen...
+              Datei wird hochgeladen...
             </p>
           </div>
         ) : (
@@ -288,26 +304,44 @@ function ImportTab() {
             <FileSpreadsheet className="h-10 w-10 text-muted-foreground" />
             <div>
               <p className="text-sm font-medium text-foreground">
-                Lieferanten-CSV hier ablegen
+                Import-Datei hier ablegen
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                Semikolon-getrennte CSV-Datei (z.B. fuersie_komplett.csv)
+                CSV (Semikolon-getrennt) oder Excel (.xlsx)
               </p>
             </div>
-            <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90">
-              <Upload className="h-4 w-4" />
-              Datei auswählen
-              <input
-                type="file"
-                accept=".csv"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) handleUpload(f);
-                  e.target.value = "";
-                }}
-              />
-            </label>
+            <div className="flex gap-2">
+              <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90">
+                <Upload className="h-4 w-4" />
+                Datei auswählen
+                <input
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleUpload(f);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            </div>
+            <div className="flex gap-2 mt-1">
+              <button
+                onClick={() => handleDownloadTemplate("csv")}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs hover:bg-accent"
+              >
+                <Download className="h-3 w-3" />
+                Standard-Vorlage CSV
+              </button>
+              <button
+                onClick={() => handleDownloadTemplate("xlsx")}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs hover:bg-accent"
+              >
+                <Download className="h-3 w-3" />
+                Standard-Vorlage Excel
+              </button>
+            </div>
           </div>
         )}
 
