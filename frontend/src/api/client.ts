@@ -161,6 +161,8 @@ export interface SupplierProductInfo {
   supplier_sku: string | null;
   purchase_price: number | null;
   retail_price: number | null;
+  abda_ek: number | null;
+  discount_source: string | null;
 }
 
 export interface ProductListResponse {

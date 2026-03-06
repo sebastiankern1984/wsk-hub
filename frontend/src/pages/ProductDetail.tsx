@@ -378,14 +378,24 @@ export default function ProductDetail() {
                   )}
                 </div>
                 <div className="text-right text-sm">
-                  {sp.purchase_price != null && (
+                  {sp.abda_ek != null && (
                     <span className="text-muted-foreground">
+                      ABDA EK: {sp.abda_ek.toFixed(2)}
+                    </span>
+                  )}
+                  {sp.purchase_price != null && (
+                    <span className="ml-3 text-muted-foreground">
                       EK: {sp.purchase_price.toFixed(2)}
                     </span>
                   )}
                   {sp.retail_price != null && (
                     <span className="ml-3 text-muted-foreground">
                       VK: {sp.retail_price.toFixed(2)}
+                    </span>
+                  )}
+                  {sp.discount_source && (
+                    <span className="ml-2 text-xs text-muted-foreground/60">
+                      ({sp.discount_source.replace("_", " ")})
                     </span>
                   )}
                 </div>

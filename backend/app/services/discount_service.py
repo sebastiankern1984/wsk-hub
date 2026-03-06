@@ -122,6 +122,7 @@ async def recalculate_supplier_product(
 
     changed = old_price is None or old_price != new_price
 
+    sp.abda_ek = float(apo_ek)
     sp.purchase_price = float(new_price)
     sp.discount_source = discount_source
 

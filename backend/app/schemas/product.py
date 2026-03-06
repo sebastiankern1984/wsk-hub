@@ -131,6 +131,8 @@ class SupplierProductInfo(BaseModel):
     supplier_sku: str | None = None
     purchase_price: float | None = None
     retail_price: float | None = None
+    abda_ek: float | None = None
+    discount_source: str | None = None
 
     model_config = {"from_attributes": True}
 

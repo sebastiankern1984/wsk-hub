@@ -208,6 +208,8 @@ async def get_product(
             supplier_sku=sp.supplier_sku,
             purchase_price=float(sp.purchase_price) if sp.purchase_price is not None else None,
             retail_price=float(sp.retail_price) if sp.retail_price is not None else None,
+            abda_ek=float(sp.abda_ek) if sp.abda_ek is not None else None,
+            discount_source=sp.discount_source,
         )
         for sp in product.supplier_products
     ]
