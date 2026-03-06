@@ -131,7 +131,41 @@ async def recalculate_for_supplier(
     supplier_id: int,
     user_id: str | None = None,
 ) -> dict:
-    """Recalculate all pharma product prices for a supplier."""
+    """Recalculate all pharma product prices for a supplier.
+
+    For pharma_grosshandel suppliers: also auto-links all PZN products
+    that are not yet linked (since they supply everything in ABDA).
+    """
+    supplier = await db.get(Supplier, supplier_id)
+
+    # For pharma wholesalers: auto-link all PZN products not yet linked
+    linked = 0
+    if supplier and supplier.type == "pharma_grosshandel":
+        # Find PZN products that are NOT yet linked to this supplier
+        existing_product_ids = select(SupplierProduct.product_id).where(
+            SupplierProduct.supplier_id == supplier_id
+        ).scalar_subquery()
+
+        result = await db.execute(
+            select(Product).where(
+                Product.pzn.isnot(None),
+                Product.id.notin_(existing_product_ids),
+            )
+        )
+        unlinked = result.scalars().all()
+
+        for product in unlinked:
+            sp = SupplierProduct(
+                product_id=product.id,
+                supplier_id=supplier_id,
+            )
+            db.add(sp)
+            linked += 1
+
+        if linked > 0:
+            await db.flush()
+
+    # Now recalculate all linked PZN products
     result = await db.execute(
         select(SupplierProduct)
         .join(Product)
@@ -152,4 +186,4 @@ async def recalculate_for_supplier(
             updated += 1
 
     await db.flush()
-    return {"total": len(supplier_products), "updated": updated}
+    return {"total": len(supplier_products), "updated": updated, "linked": linked}

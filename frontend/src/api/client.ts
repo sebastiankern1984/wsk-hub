@@ -306,6 +306,7 @@ export interface DiscountRule {
 export interface RecalculationResult {
   total: number;
   updated: number;
+  linked: number;
 }
 
 export interface CsvImportResult {

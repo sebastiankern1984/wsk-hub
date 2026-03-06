@@ -288,6 +288,7 @@ function OverviewTab({
             {recalcResult && (
               <span className="inline-flex items-center gap-2 text-sm text-emerald-500">
                 <CheckCircle2 className="h-4 w-4" />
+                {recalcResult.linked > 0 && `${recalcResult.linked} verknüpft, `}
                 {recalcResult.updated} von {recalcResult.total} aktualisiert
               </span>
             )}
