@@ -175,8 +175,10 @@ async def process_abda_to_product(
             ))
 
     # 8. ProductPrice: apo_ek als Basis-EK von Quelle "abda"
-    apo_ek_val = _safe_float(abda.apo_ek)
-    if apo_ek_val and apo_ek_val > 0:
+    # ABDA speichert Preise als Ganzzahl in Cent (z.B. 779 = 7.79 EUR)
+    apo_ek_raw = _safe_float(abda.apo_ek)
+    if apo_ek_raw and apo_ek_raw > 0:
+        apo_ek_val = apo_ek_raw / 100.0
         result = await db.execute(
             select(ProductPrice).where(
                 ProductPrice.product_id == product.id,

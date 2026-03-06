@@ -107,9 +107,11 @@ async def recalculate_supplier_product(
     if not abda or not abda.apo_ek:
         return False
 
-    apo_ek = _safe_decimal(abda.apo_ek)
-    if not apo_ek or apo_ek <= 0:
+    # ABDA speichert Preise als Ganzzahl in Cent (z.B. 779 = 7.79 EUR)
+    apo_ek_raw = _safe_decimal(abda.apo_ek)
+    if not apo_ek_raw or apo_ek_raw <= 0:
         return False
+    apo_ek = apo_ek_raw / Decimal("100")
 
     discount_percent, discount_source = await resolve_discount(
         db, sp.supplier_id, product
