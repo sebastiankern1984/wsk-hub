@@ -351,6 +351,7 @@ async def update_product(
             user_id=user.username,
         )
 
+    await db.flush()
     return _product_to_response(product)
 
 
@@ -527,4 +528,5 @@ async def update_field_locks(
         user_id=user.username,
     )
 
+    await db.flush()
     return current_locks
