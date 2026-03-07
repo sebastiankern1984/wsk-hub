@@ -134,9 +134,10 @@ async def process_abda_to_product(
     }
 
     if existing_product:
-        # 6a. Update existing product
+        # 6a. Update existing product (respect field locks)
+        locks = existing_product.field_locks or {}
         for key, value in product_data.items():
-            if value is not None:
+            if value is not None and not locks.get(key, False):
                 setattr(existing_product, key, value)
         existing_product.version += 1
         product = existing_product

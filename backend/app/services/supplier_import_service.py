@@ -488,8 +488,9 @@ async def _add_hs_code_if_new(
     db: AsyncSession,
     product: Product,
     zolltarifnummer: str | None,
+    source: str = "supplier_import",
 ):
-    """Add HS code if present and not already stored."""
+    """Add HS code if present and not already stored. Respects is_locked."""
     if not zolltarifnummer or not zolltarifnummer.strip():
         return
     hs = zolltarifnummer.strip()
@@ -499,11 +500,18 @@ async def _add_hs_code_if_new(
             ProductHsCode.country == "DE",
         )
     )
-    if not result.scalar_one_or_none():
+    existing = result.scalar_one_or_none()
+    if existing:
+        # If locked, don't touch; if unlocked, update value
+        if not existing.is_locked and existing.hs_code != hs:
+            existing.hs_code = hs
+            existing.source = source
+    else:
         db.add(ProductHsCode(
             product_id=product.id,
             country="DE",
             hs_code=hs,
+            source=source,
         ))
 
 
@@ -753,8 +761,10 @@ async def import_supplier_file(
 
 def _enrich_product(product: Product, row: dict[str, str]):
     """Fill empty product fields with supplier data (don't overwrite existing)."""
+    locks = product.field_locks or {}
+
     def _set_if_empty(field: str, value):
-        if value is not None and getattr(product, field, None) is None:
+        if value is not None and getattr(product, field, None) is None and not locks.get(field, False):
             setattr(product, field, value)
 
     _set_if_empty("nan", (row.get("nan") or "").strip() or None)

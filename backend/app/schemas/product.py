@@ -72,6 +72,7 @@ class ProductCreate(ProductBase):
 
 
 class ProductUpdate(BaseModel):
+    field_locks: dict | None = None
     # Identity
     erp_sku: str | None = None
     internal_sku: str | None = None
@@ -173,13 +174,33 @@ class ProductHsCodeInfo(BaseModel):
     id: int
     country: str
     hs_code: str
+    source: str | None = None
+    is_locked: bool = False
+    updated_by: str | None = None
+    updated_at: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+class ProductHsCodeCreate(BaseModel):
+    country: str
+    hs_code: str
+
+
+class ProductHsCodeUpdate(BaseModel):
+    country: str | None = None
+    hs_code: str | None = None
+    is_locked: bool | None = None
+
+
+class FieldLockUpdate(BaseModel):
+    field_locks: dict
 
 
 class ProductResponse(ProductBase):
     id: int
     product_id: str
+    field_locks: dict = {}
     version: int
     status: str
     supplier_count: int = 0

@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 
 from sqlalchemy import Boolean, ForeignKey, Index, Integer, Numeric, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func, text
 
@@ -108,6 +108,9 @@ class Product(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft", server_default="'draft'")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+    # Field-level lock map  {"field_name": true} — locked fields are protected from import overwrite
+    field_locks: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True, server_default=text("'{}'::jsonb"))
 
     # Relationships
     manufacturer_rel: Mapped[Optional["Manufacturer"]] = relationship(back_populates="products")

@@ -118,6 +118,7 @@ export interface Product {
   release_to_erp: boolean;
   release_to_channel: boolean;
   // Meta
+  field_locks: Record<string, boolean>;
   version: number;
   status: string;
   supplier_count: number;
@@ -149,6 +150,10 @@ export interface ProductHsCodeInfo {
   id: number;
   country: string;
   hs_code: string;
+  source: string | null;
+  is_locked: boolean;
+  updated_by: string | null;
+  updated_at: string | null;
 }
 
 export interface ProductDetail extends Product {
@@ -410,10 +415,36 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
-  updateProduct: (id: number, data: Partial<Product>) =>
+  updateProduct: (id: number, data: Partial<Product> & { field_locks?: Record<string, boolean> }) =>
     fetchAPI<Product>(`/api/products/${id}`, {
       method: "PUT",
       body: JSON.stringify(data),
+    }),
+
+  // HS-Code CRUD
+  createHsCode: (productId: number, data: { country: string; hs_code: string }) =>
+    fetchAPI<ProductHsCodeInfo>(`/api/products/${productId}/hs-codes`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateHsCode: (productId: number, hsCodeId: number, data: { country?: string; hs_code?: string; is_locked?: boolean }) =>
+    fetchAPI<ProductHsCodeInfo>(`/api/products/${productId}/hs-codes/${hsCodeId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  deleteHsCode: (productId: number, hsCodeId: number) =>
+    fetch(`${API_BASE}/api/products/${productId}/hs-codes/${hsCodeId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+    }),
+
+  // Field Locks
+  updateFieldLocks: (productId: number, locks: Record<string, boolean>) =>
+    fetchAPI<Record<string, boolean>>(`/api/products/${productId}/field-locks`, {
+      method: "PUT",
+      body: JSON.stringify({ field_locks: locks }),
     }),
 
   // Suppliers

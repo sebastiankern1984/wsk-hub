@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from datetime import datetime
+from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.sql import func
 
 from app.database import Base
 
@@ -20,6 +22,12 @@ class ProductHsCode(Base):
     )
     country: Mapped[str] = mapped_column(String(5), nullable=False)
     hs_code: Mapped[str] = mapped_column(String(20), nullable=False)
+
+    # Tracking
+    source: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    is_locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    updated_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(server_default=func.now(), onupdate=func.now(), nullable=True)
 
     product: Mapped["Product"] = relationship(back_populates="hs_codes")
 

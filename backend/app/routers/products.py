@@ -13,11 +13,15 @@ from app.middleware.auth import get_current_user, require_role
 from app.models.product import Product
 from app.models.supplier_product import SupplierProduct
 from app.models.user import User
+from app.models.product_hs_code import ProductHsCode
 from app.schemas.product import (
+    FieldLockUpdate,
     ProductCreate,
     ProductDetailResponse,
     ProductEanInfo,
+    ProductHsCodeCreate,
     ProductHsCodeInfo,
+    ProductHsCodeUpdate,
     ProductListResponse,
     ProductPriceInfo,
     ProductResponse,
@@ -92,6 +96,7 @@ def _product_to_response(product: Product) -> ProductResponse:
         release_to_erp=product.release_to_erp,
         release_to_channel=product.release_to_channel,
         # Meta
+        field_locks=product.field_locks or {},
         version=product.version,
         status=product.status,
         supplier_count=len(product.supplier_products) if product.supplier_products else 0,
@@ -245,7 +250,15 @@ async def get_product(
     ]
 
     hs_codes_list = [
-        ProductHsCodeInfo(id=h.id, country=h.country, hs_code=h.hs_code)
+        ProductHsCodeInfo(
+            id=h.id,
+            country=h.country,
+            hs_code=h.hs_code,
+            source=h.source,
+            is_locked=h.is_locked,
+            updated_by=h.updated_by,
+            updated_at=h.updated_at.isoformat() if h.updated_at else None,
+        )
         for h in product.hs_codes
     ]
 
@@ -301,14 +314,32 @@ async def update_product(
         raise HTTPException(status_code=404, detail="Product not found")
 
     update_data = data.model_dump(exclude_unset=True)
+
+    # Handle field_locks merge separately
+    explicit_locks = update_data.pop("field_locks", None)
+
     changes = {}
+    current_locks = dict(product.field_locks or {})
+
     for field, value in update_data.items():
         old_value = getattr(product, field)
         if old_value != value:
             changes[field] = {"old": old_value, "new": value}
             setattr(product, field, value)
+            # Auto-lock field when manually edited
+            current_locks[field] = True
 
-    if changes:
+    # Merge explicit lock/unlock requests (e.g. user clicks lock icon)
+    if explicit_locks is not None:
+        for field, locked in explicit_locks.items():
+            if locked:
+                current_locks[field] = True
+            else:
+                current_locks.pop(field, None)
+
+    product.field_locks = current_locks
+
+    if changes or explicit_locks is not None:
         product.version += 1
         await append_event(
             db=db,
@@ -316,8 +347,184 @@ async def update_product(
             aggregate_type="product",
             aggregate_id=str(product.product_id),
             aggregate_version=product.version,
-            payload={"changes": changes},
+            payload={"changes": changes, "field_locks": current_locks},
             user_id=user.username,
         )
 
     return _product_to_response(product)
+
+
+# ── HS-Code CRUD ──────────────────────────────────────────────
+
+
+@router.post("/{product_id}/hs-codes", status_code=201, response_model=ProductHsCodeInfo)
+async def create_hs_code(
+    product_id: int,
+    data: ProductHsCodeCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_role("manager")),
+):
+    product = await db.get(Product, product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    existing = await db.execute(
+        select(ProductHsCode).where(
+            ProductHsCode.product_id == product_id,
+            ProductHsCode.country == data.country,
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail=f"HS-Code for country '{data.country}' already exists")
+
+    hs = ProductHsCode(
+        product_id=product_id,
+        country=data.country,
+        hs_code=data.hs_code,
+        source="manual",
+        is_locked=True,
+        updated_by=user.username,
+    )
+    db.add(hs)
+    await db.flush()
+
+    await append_event(
+        db=db,
+        event_type="HsCodeCreated",
+        aggregate_type="product",
+        aggregate_id=str(product.product_id),
+        aggregate_version=product.version,
+        payload={"country": data.country, "hs_code": data.hs_code},
+        user_id=user.username,
+    )
+
+    return ProductHsCodeInfo(
+        id=hs.id,
+        country=hs.country,
+        hs_code=hs.hs_code,
+        source=hs.source,
+        is_locked=hs.is_locked,
+        updated_by=hs.updated_by,
+        updated_at=hs.updated_at.isoformat() if hs.updated_at else None,
+    )
+
+
+@router.put("/{product_id}/hs-codes/{hs_code_id}", response_model=ProductHsCodeInfo)
+async def update_hs_code(
+    product_id: int,
+    hs_code_id: int,
+    data: ProductHsCodeUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_role("manager")),
+):
+    result = await db.execute(
+        select(ProductHsCode).where(
+            ProductHsCode.id == hs_code_id,
+            ProductHsCode.product_id == product_id,
+        )
+    )
+    hs = result.scalar_one_or_none()
+    if not hs:
+        raise HTTPException(status_code=404, detail="HS-Code not found")
+
+    if data.country is not None:
+        hs.country = data.country
+    if data.hs_code is not None:
+        hs.hs_code = data.hs_code
+    if data.is_locked is not None:
+        hs.is_locked = data.is_locked
+
+    hs.source = "manual"
+    hs.updated_by = user.username
+
+    product = await db.get(Product, product_id)
+    if product:
+        await append_event(
+            db=db,
+            event_type="HsCodeUpdated",
+            aggregate_type="product",
+            aggregate_id=str(product.product_id),
+            aggregate_version=product.version,
+            payload={"hs_code_id": hs_code_id, "country": hs.country, "hs_code": hs.hs_code},
+            user_id=user.username,
+        )
+
+    return ProductHsCodeInfo(
+        id=hs.id,
+        country=hs.country,
+        hs_code=hs.hs_code,
+        source=hs.source,
+        is_locked=hs.is_locked,
+        updated_by=hs.updated_by,
+        updated_at=hs.updated_at.isoformat() if hs.updated_at else None,
+    )
+
+
+@router.delete("/{product_id}/hs-codes/{hs_code_id}", status_code=204)
+async def delete_hs_code(
+    product_id: int,
+    hs_code_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_role("manager")),
+):
+    result = await db.execute(
+        select(ProductHsCode).where(
+            ProductHsCode.id == hs_code_id,
+            ProductHsCode.product_id == product_id,
+        )
+    )
+    hs = result.scalar_one_or_none()
+    if not hs:
+        raise HTTPException(status_code=404, detail="HS-Code not found")
+
+    product = await db.get(Product, product_id)
+    if product:
+        await append_event(
+            db=db,
+            event_type="HsCodeDeleted",
+            aggregate_type="product",
+            aggregate_id=str(product.product_id),
+            aggregate_version=product.version,
+            payload={"hs_code_id": hs_code_id, "country": hs.country, "hs_code": hs.hs_code},
+            user_id=user.username,
+        )
+
+    await db.delete(hs)
+
+
+@router.put("/{product_id}/field-locks", response_model=dict)
+async def update_field_locks(
+    product_id: int,
+    data: FieldLockUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_role("manager")),
+):
+    result = await db.execute(
+        select(Product)
+        .options(selectinload(Product.supplier_products))
+        .where(Product.id == product_id)
+    )
+    product = result.unique().scalar_one_or_none()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    current_locks = dict(product.field_locks or {})
+    for field, locked in data.field_locks.items():
+        if locked:
+            current_locks[field] = True
+        else:
+            current_locks.pop(field, None)
+
+    product.field_locks = current_locks
+
+    await append_event(
+        db=db,
+        event_type="FieldLocksUpdated",
+        aggregate_type="product",
+        aggregate_id=str(product.product_id),
+        aggregate_version=product.version,
+        payload={"field_locks": current_locks},
+        user_id=user.username,
+    )
+
+    return current_locks
